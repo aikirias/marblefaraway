@@ -1,0 +1,44 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: estimator
+      POSTGRES_PASSWORD: change_me
+      POSTGRES_DB: estimator_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - '5432:5432'
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - '8080:80'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - db
+
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+    volumes:
+      - ./app:/app
+      - ./config:/app/config
+      - ./.streamlit:/app/.streamlit
+    ports:
+      - '8501:8501'
+    environment:
+      - DATABASE_URL=postgresql://estimator:change_me@db:5432/estimator_db
+      - CONFIG_PATH=/app/config/settings.py
+
+volumes:
+  pgdata:
+  pgadmin_data:

@@ -1,0 +1,7 @@
+streamlit==1.45.1
+SQLAlchemy==2.0.41
+psycopg2-binary==2.9.10
+pandas==2.3.0
+python-dateutil==2.9.0.post0
+altair==5.5.0
+streamlit-draggable-list==0.0.1
