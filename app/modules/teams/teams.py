@@ -1,73 +1,91 @@
 import streamlit as st
 import pandas as pd
 import sqlalchemy as sa
-from modules.common.db import engine, areas_table, people_table, run
+from modules.common.db import engine, teams_table, tier_capacity_table, run
 
 # Render Teams tab UI
 def render_teams():
-    st.header("Team Configuration")
+    st.header("Teams Management")
 
-    # Areas Management
-    st.subheader("Areas Management")
-    with st.expander("Add New Area"):
-        name = st.text_input("Area Name", key="new_area")
-        if st.button("Create Area") and name:
-            run(areas_table.insert().values(name=name))
-            st.success(f"Area '{name}' created.")
+    # --- Teams Configuration ---
+    st.subheader("Configure Teams")
+    # Add new team
+    with st.expander("Add New Team"):
+        team_name = st.text_input("Team Name", key="new_team_name")
+        total = st.number_input("Total Devs", min_value=0, step=1, key="new_team_total")
+        if st.button("Create Team") and team_name:
+            run(teams_table.insert().values(name=team_name, total_devs=int(total), busy_devs=0))
+            st.success(f"Team '{team_name}' created with {int(total)} devs.")
             #st.experimental_rerun()
 
-    df_a = pd.read_sql(areas_table.select(), engine)
-    if not df_a.empty:
-        sel = st.selectbox("Select Area", df_a['name'], key="sel_area")
-        newname = st.text_input("New Name", value=sel, key="upd_area")
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("Update Area"):
-                run(areas_table.update().where(areas_table.c.name==sel).values(name=newname))
-                st.success("Area updated.")
+    # Edit/Delete existing teams
+    df_teams = pd.read_sql(teams_table.select().order_by(teams_table.c.name), engine)
+    if not df_teams.empty:
+        sel = st.selectbox("Select Team", df_teams['name'], key="sel_team")
+        row = df_teams[df_teams['name'] == sel].iloc[0]
+        team_id = int(row['id'])
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            new_name = st.text_input("New Name", value=row['name'], key="upd_team_name")
+        with col2:
+            new_total = st.number_input(
+                "Total Devs", min_value=0, value=int(row['total_devs']), key="upd_team_total"
+            )
+        with col3:
+            if st.button("Update Team"):
+                run(
+                    teams_table.update()
+                               .where(teams_table.c.id == team_id)
+                               .values(name=new_name, total_devs=int(new_total))
+                )
+                st.success("Team updated.")
                 #st.experimental_rerun()
-        with c2:
-            if st.button("Delete Area"):
-                run(areas_table.delete().where(areas_table.c.name==sel))
-                st.success("Area deleted.")
-                #st.experimental_rerun()
-
-    # People Management
-    st.subheader("People Management")
-    with st.expander("Add New Person"):
-        pname = st.text_input("Person Name", key="new_person")
-        parea = st.selectbox("Area", df_a['name'], key="new_person_area")
-        pavail = st.selectbox("Availability (FTE)", [0.25,0.5,0.75,1.0], key="new_person_avail")
-        if st.button("Add Person") and pname:
-            aid = int(df_a[df_a['name']==parea]['id'].iloc[0])
-            run(people_table.insert().values(name=pname, area_id=aid, availability=pavail))
-            st.success(f"Person '{pname}' added to '{parea}'.")
+        if st.button("Delete Team"):
+            run(teams_table.delete().where(teams_table.c.id == team_id))
+            st.success("Team deleted.")
             #st.experimental_rerun()
 
-    peo_q = sa.select(
-        people_table.c.id, people_table.c.name,
-        areas_table.c.name.label('area'), people_table.c.availability
-    ).select_from(
-        people_table.join(areas_table, people_table.c.area_id==areas_table.c.id)
+    # --- Tier Capacity Configuration ---
+    st.subheader("Tier Capacity per Team")
+    # Refresh team list
+    df_teams = pd.read_sql(teams_table.select().order_by(teams_table.c.name), engine)
+    team_opts = df_teams['name'].tolist()
+    sel_team = st.selectbox("Team for Tiers", team_opts, key="tier_team_select")
+    team_id = int(df_teams[df_teams['name'] == sel_team]['id'].iloc[0])
+
+    # Show existing tiers
+    tier_q = sa.select(
+        tier_capacity_table.c.id,
+        tier_capacity_table.c.tier,
+        tier_capacity_table.c.hours_per_person
+    ).where(tier_capacity_table.c.team_id == team_id).order_by(tier_capacity_table.c.tier)
+    df_tiers = pd.read_sql(tier_q, engine)
+    st.table(
+        df_tiers[['tier', 'hours_per_person']]
+        .rename(columns={'tier':'Tier','hours_per_person':'Hours/Person'})
     )
-    df_p = pd.read_sql(peo_q, engine)
-    if not df_p.empty:
-        opts = [f"{r.name} ({r.area})" for r in df_p.itertuples()]
-        selp = st.selectbox("Select Person", opts, key="sel_person")
-        idx = opts.index(selp)
-        pid = df_p.iloc[idx]['id']
-        newp = st.text_input("New Name", value=df_p.iloc[idx]['name'], key="upd_person_name")
-        narea = st.selectbox("New Area", df_a['name'], key="upd_person_area")
-        navail = st.selectbox("New Availability", [0.25,0.5,0.75,1.0], index=[0.25,0.5,0.75,1.0].index(df_p.iloc[idx]['availability']), key="upd_person_avail")
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("Update Person"):
-                aid = int(df_a[df_a['name']==narea]['id'].iloc[0])
-                run(people_table.update().where(people_table.c.id==pid).values(name=newp, area_id=aid, availability=navail))
-                st.success("Person updated.")
-                #st.experimental_rerun()
-        with c2:
-            if st.button("Delete Person"):
-                run(people_table.delete().where(people_table.c.id==pid))
-                st.success("Person deleted.")
-                #st.experimental_rerun()
+
+    # Add or update tier
+    with st.expander("Add/Update Tier"):
+        tw_tier = st.number_input("Tier Level", min_value=1, step=1, key="tier_level")
+        tw_hours = st.number_input("Hours per Person", min_value=0, step=1, key="tier_hours")
+        if st.button("Save Tier"):
+            exists = df_tiers['tier'].tolist()
+            if tw_tier in exists:
+                run(
+                    tier_capacity_table.update()
+                                       .where(tier_capacity_table.c.team_id == team_id)
+                                       .where(tier_capacity_table.c.tier == int(tw_tier))
+                                       .values(hours_per_person=int(tw_hours))
+                )
+                st.success(f"Tier {tw_tier} updated to {tw_hours} hrs.")
+            else:
+                run(
+                    tier_capacity_table.insert().values(
+                        team_id=team_id,
+                        tier=int(tw_tier),
+                        hours_per_person=int(tw_hours)
+                    )
+                )
+                st.success(f"Tier {tw_tier} added with {tw_hours} hrs.")
+            #st.experimental_rerun()

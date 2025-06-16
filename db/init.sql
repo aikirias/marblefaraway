@@ -37,3 +37,27 @@ CREATE TABLE tier_capacity (
   tier INTEGER NOT NULL,
   hours_per_person INTEGER NOT NULL
 );
+
+INSERT INTO teams (name, total_devs, busy_devs) VALUES
+  ('Devs', 6, 0),
+  ('Arch', 2, 0),
+  ('Model', 4, 0),
+  ('Dqa', 4, 0);
+
+-- Default seed data for tier_capacity
+INSERT INTO tier_capacity (team_id, tier, hours_per_person)
+  SELECT id, 1, 16 FROM teams WHERE name = 'Arch' UNION ALL
+  SELECT id, 2, 32 FROM teams WHERE name = 'Arch' UNION ALL
+  SELECT id, 3, 72 FROM teams WHERE name = 'Arch' UNION ALL
+  SELECT id, 4, 240 FROM teams WHERE name = 'Arch' UNION ALL
+  SELECT id, 1, 16 FROM teams WHERE name = 'Devs' UNION ALL
+  SELECT id, 2, 40 FROM teams WHERE name = 'Devs' UNION ALL
+  SELECT id, 3, 80 FROM teams WHERE name = 'Devs' UNION ALL
+  SELECT id, 4, 120 FROM teams WHERE name = 'Devs' UNION ALL
+  SELECT id, 1, 40 FROM teams WHERE name = 'Model' UNION ALL
+  SELECT id, 2, 80 FROM teams WHERE name = 'Model' UNION ALL
+  SELECT id, 3, 120 FROM teams WHERE name = 'Model' UNION ALL
+  SELECT id, 4, 160 FROM teams WHERE name = 'Model' UNION ALL
+  SELECT id, 1, 8 FROM teams WHERE name = 'Dqa' UNION ALL
+  SELECT id, 2, 24 FROM teams WHERE name = 'Dqa' UNION ALL
+  SELECT id, 3, 40 FROM teams WHERE name = 'Dqa';

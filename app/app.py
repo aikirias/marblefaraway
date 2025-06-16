@@ -1,5 +1,5 @@
 import streamlit as st
-#from modules.teams.teams import render_teams
+from modules.teams.teams import render_teams
 from modules.projects.projects import render_projects
 
 st.set_page_config(
@@ -15,6 +15,6 @@ st.title("Automatic Project Estimator (APE)")
 tab1, tab2 = st.tabs(["Teams", "Projects"])
 with tab1:
     st.title("Teams Management")
-    #render_teams()
+    render_teams()
 with tab2:
     render_projects()
