@@ -14,7 +14,6 @@ st.title("Automatic Project Estimator (APE)")
 # Tabs for Teams and Projects
 tab1, tab2 = st.tabs(["Teams", "Projects"])
 with tab1:
-    st.title("Teams Management")
     render_teams()
 with tab2:
     render_projects()
