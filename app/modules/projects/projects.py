@@ -1,52 +1,85 @@
 import streamlit as st
 import pandas as pd
 import sqlalchemy as sa
-from modules.common.db import engine, projects_table, run
+from sqlalchemy import func
+from modules.common.db import (
+    engine,
+    projects_table,
+    teams_table,
+    project_team_assignments_table,
+    tier_capacity_table,
+    run
+)
 from st_draggable_list import DraggableList
 
-# Render Projects tab UI
 def render_projects():
     st.header("Project Management")
 
-    # Create New Project
+    # ————————————————————————————————
+    # 1) Create New Project (with default assignments)
+    # ————————————————————————————————
     st.subheader("Create New Project")
     pname = st.text_input("Project Name", key="proj_name")
-    phase = st.selectbox(
-        "Phase",
-        ["Arch", "Model", "Development", "QA"],
-        key="proj_phase"
-    )
     start = st.date_input("Start Date", key="proj_start")
-    due_wo_qa = st.date_input("Due Date (without QA)", key="proj_due_wo_qa")
-    due_with_qa = st.date_input("Due Date (with QA)", key="proj_due_with_qa")
 
     if st.button("Create Project") and pname:
-        # Determinar la próxima prioridad de forma segura
-        df_prio = pd.read_sql(
-            sa.select(projects_table.c.priority),
-            engine
-        )
-        max_prio = df_prio['priority'].max()
-        if pd.isna(max_prio):
-            next_prio = 1
-        else:
-            next_prio = int(max_prio) + 99
-
-        run(
-            projects_table.insert().values(
-                name=pname,
-                priority=next_prio,
-                phase=phase,
-                start_date=start,
-                due_date_wo_qa=due_wo_qa,
-                due_date_with_qa=due_with_qa
+        # Abrimos UNA transacción para todo el proceso
+        with engine.begin() as conn:
+            # 1. Insert project y recuperar su ID
+            result = conn.execute(
+                sa.insert(projects_table)
+                .values(
+                    name=pname,
+                    priority=int(
+                        conn.execute(
+                            sa.select(func.coalesce(func.max(projects_table.c.priority), 0))
+                        ).scalar()
+                    ) + 1,
+                    phase="",               # opcional si ya no lo usas
+                    start_date=start,
+                    due_date_wo_qa=start,
+                    due_date_with_qa=start
+                )
+                .returning(projects_table.c.id)
             )
-        )
-        st.success(f"Project '{pname}' created with priority {next_prio}.")
+            proj_id = result.scalar()
 
-    # Reorder Projects
+            # 2. Para cada equipo, insertar assignment con defaults
+            team_ids = conn.execute(
+                sa.select(teams_table.c.id)
+            ).scalars().all()
+
+            for team_id in team_ids:
+                max_tier = conn.execute(
+                    sa.select(func.max(tier_capacity_table.c.tier))
+                    .where(tier_capacity_table.c.team_id == team_id)
+                ).scalar() or 1
+
+                conn.execute(
+                    project_team_assignments_table.insert().values(
+                        project_id=proj_id,
+                        team_id=team_id,
+                        tier=int(max_tier),
+                        devs_assigned=1,
+                        max_devs=1,
+                        estimated_hours=0,
+                        start_date=start,
+                        ready_to_start_date=start,
+                        paused_on=None,
+                        pending_hours=0,
+                        status="Not Started"
+                    )
+                )
+
+        st.success(f"Project '{pname}' created with ID {proj_id} y default assignments.")
+
+
+
+    # --------------------------------------------
+    # 2) Reorder Projects
+    # --------------------------------------------
     st.subheader("Reorder Projects")
-    df = pd.read_sql(
+    df_proj = pd.read_sql(
         sa.select(
             projects_table.c.id,
             projects_table.c.name,
@@ -54,18 +87,12 @@ def render_projects():
         ).order_by(projects_table.c.priority),
         engine
     )
-    if df.empty:
+    if df_proj.empty:
         st.info("No projects to display.")
         return
 
-    # Construir lista draggable
-    items = [
-        {"id": r.id, "name": f"({r.priority}) {r.name}"}
-        for r in df.itertuples()
-    ]
+    items = [{"id": r.id, "name": f"({r.priority}) {r.name}"} for r in df_proj.itertuples()]
     new_order = DraggableList(items, text_key="name", key="proj_sort")
-
-    # Guardar nuevo orden
     if st.button("Save Order"):
         for idx, itm in enumerate(new_order, start=1):
             run(
@@ -74,3 +101,110 @@ def render_projects():
                               .values(priority=idx)
             )
         st.success("Project priorities updated.")
+
+    # --------------------------------------------
+    # 3) Edit Team Assignments
+    # --------------------------------------------
+    st.subheader("Edit Team Assignments")
+    selected_name = st.selectbox(
+        "Select Project to Edit",
+        df_proj["name"].tolist(),
+        key="sel_proj_edit"
+    )
+    proj_id = int(df_proj[df_proj["name"] == selected_name]["id"].iloc[0])
+
+    # Leer asignaciones existentes
+    assign_q = (
+        sa.select(
+            project_team_assignments_table.c.id,
+            project_team_assignments_table.c.team_id,
+            teams_table.c.name.label("team_name"),
+            project_team_assignments_table.c.tier,
+            project_team_assignments_table.c.devs_assigned,
+            project_team_assignments_table.c.max_devs,
+            project_team_assignments_table.c.estimated_hours,
+            project_team_assignments_table.c.ready_to_start_date,
+            project_team_assignments_table.c.start_date.label("assignment_start")
+        )
+        .select_from(
+            project_team_assignments_table.join(
+                teams_table,
+                project_team_assignments_table.c.team_id == teams_table.c.id
+            )
+        )
+        .where(project_team_assignments_table.c.project_id == proj_id)
+    )
+    df_assign = pd.read_sql(assign_q, engine)
+
+    if df_assign.empty:
+        st.info("No assignments for this project.")
+        return
+
+    # Para cada asignación, un expander con campos editables
+    for row in df_assign.itertuples():
+        with st.expander(row.team_name):
+            # Tier: opciones filtradas por team_id
+            tiers_df = pd.read_sql(
+                sa.select(
+                    tier_capacity_table.c.tier
+                )
+                .where(tier_capacity_table.c.team_id == row.team_id)
+                .order_by(tier_capacity_table.c.tier),
+                engine
+            )
+            tier_opts = tiers_df["tier"].tolist()
+            new_tier = st.selectbox(
+                "Tier",
+                tier_opts,
+                index=tier_opts.index(row.tier) if row.tier in tier_opts else 0,
+                key=f"tier_{row.id}"
+            )
+
+            # Devs assigned / max devs
+            new_assigned = st.number_input(
+                "Devs Assigned",
+                min_value=0.25,
+                max_value=100.0,
+                step=0.25,
+                value=float(row.devs_assigned),
+                key=f"assigned_{row.id}"
+            )
+            new_max = st.number_input(
+                "Max Devs",
+                min_value=0.25,
+                max_value=100.0,
+                step=0.25,
+                value=float(row.max_devs),
+                key=f"max_{row.id}"
+            )
+
+            # Estimated hours
+            new_hours = st.number_input(
+                "Estimated Hours",
+                min_value=0,
+                value=int(row.estimated_hours),
+                key=f"hours_{row.id}"
+            )
+
+            # Ready to start date
+            new_ready = st.date_input(
+                "Ready to Start Date",
+                value=row.ready_to_start_date or row.assignment_start,
+                key=f"ready_{row.id}"
+            )
+
+            # Guardar cambios
+            if st.button("Update Assignment", key=f"save_{row.id}"):
+                run(
+                    project_team_assignments_table.update()
+                    .where(project_team_assignments_table.c.id == row.id)
+                    .values(
+                        tier=int(new_tier),
+                        devs_assigned=new_assigned,
+                        max_devs=new_max,
+                        estimated_hours=new_hours,
+                        ready_to_start_date=new_ready
+                    )
+                )
+                st.success(f"Assignment for {row.team_name} updated.")
+                st.experimental_rerun()

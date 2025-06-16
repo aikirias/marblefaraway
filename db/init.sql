@@ -17,18 +17,24 @@ CREATE TABLE teams (
 );
 
 -- Assignments: links projects and teams with allocation details
+-- Assignments: links projects and teams with allocation details
 CREATE TABLE project_team_assignments (
   id SERIAL PRIMARY KEY,
-  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  project_id INTEGER NOT NULL 
+    REFERENCES projects(id) ON DELETE CASCADE,
+  team_id INTEGER NOT NULL 
+    REFERENCES teams(id) ON DELETE CASCADE,
+  tier INTEGER NOT NULL,
   devs_assigned NUMERIC(4,2) NOT NULL,
   max_devs NUMERIC(4,2) NOT NULL,
   estimated_hours INTEGER NOT NULL,
   start_date DATE,
+  ready_to_start_date DATE,
   paused_on DATE,
   pending_hours INTEGER,
   status TEXT NOT NULL
 );
+
 
 -- Tier-based capacity: defines hours per tier per team
 CREATE TABLE tier_capacity (
