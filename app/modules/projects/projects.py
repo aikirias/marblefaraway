@@ -207,4 +207,4 @@ def render_projects():
                     )
                 )
                 st.success(f"Assignment for {row.team_name} updated.")
-                st.experimental_rerun()
+                #st.experimental_rerun()

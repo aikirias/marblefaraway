@@ -15,13 +15,12 @@ from modules.common.db import (
     tier_capacity_table
 )
 
-# Define the order of phases
 PHASE_ORDER = ["Arch", "Model", "Dev", "Dqa"]
 
 def render_monitoring():
     st.header("Delivery Forecast")
 
-    # 1) Load projects ordered by priority
+    # 1) Load projects by priority
     df_proj = pd.read_sql(
         sa.select(
             projects_table.c.id.label("project_id"),
@@ -34,17 +33,26 @@ def render_monitoring():
         st.info("No projects to monitor.")
         return
 
-    # 2) Load assignments + tier capacity
+    # 2) Load teams capacity
+    df_teams = pd.read_sql(
+        sa.select(
+            teams_table.c.id,
+            teams_table.c.total_devs,
+            teams_table.c.busy_devs
+        ),
+        engine
+    ).set_index("id")
+
+    # 3) Load assignments + tier capacity
     assign_q = (
         sa.select(
             project_team_assignments_table.c.project_id.label("project_id"),
-            projects_table.c.name.label("project_name"),
+            projects_table.c.name         .label("project_name"),
             project_team_assignments_table.c.team_id,
-            teams_table.c.name.label("phase"),
+            teams_table.c.name            .label("phase"),
             project_team_assignments_table.c.tier,
             project_team_assignments_table.c.devs_assigned,
             project_team_assignments_table.c.estimated_hours,
-            project_team_assignments_table.c.ready_to_start_date,
             tier_capacity_table.c.hours_per_person
         )
         .select_from(
@@ -61,60 +69,77 @@ def render_monitoring():
         )
     )
     df_assign = pd.read_sql(assign_q, engine)
-
     if df_assign.empty:
         st.info("No assignments for monitoring.")
         return
 
-    # Convert ready_to_start_date to pure date to avoid Timestamp vs date comparisons
-    df_assign["ready_to_start_date"] = (
-        pd.to_datetime(df_assign["ready_to_start_date"])
-          .dt.date
-    )
-
-    # 3) Simulate schedule
-    team_next_free = {}    # team_id -> next free date (datetime.date)
-    project_next_free = {} # project_id -> next free date
-
-    # Merge priority and sort by priority + phase order
-    df = df_assign.merge(
-        df_proj[["project_id", "priority"]],
-        on="project_id",
-        how="left"
-    )
+    # 4) Prepare simulation structures
+    active_by_team = {tid: [] for tid in df_teams.index}
+    project_next_free = {}
+    df = df_assign.merge(df_proj[["project_id", "priority"]], on="project_id", how="left")
     df["phase_order"] = df["phase"].map({p: i for i, p in enumerate(PHASE_ORDER)})
     df = df.sort_values(["priority", "phase_order"])
 
     records = []
     today = date.today()
 
+    # 5) Simulate each assignment
     for r in df.itertuples():
-        ready = r.ready_to_start_date           # already a datetime.date
-        pid   = r.project_id
-        tid   = r.team_id
+        # always allow start no earlier than today
+        ready = today
 
-        # Determine hours_needed
+        pid        = r.project_id
+        tid        = r.team_id
+        total_devs = df_teams.loc[tid, "total_devs"]
+        busy0      = df_teams.loc[tid, "busy_devs"]
+        devs_req   = r.devs_assigned
+
+        # hours needed: manual override or tier * devs
         if r.estimated_hours and r.estimated_hours > 0:
             hours_needed = r.estimated_hours
         else:
-            hours_needed = r.hours_per_person * r.devs_assigned
+            hours_needed = r.hours_per_person * devs_req
 
-        # Compute start date
-        team_avail = team_next_free.get(tid, ready)
-        proj_avail = project_next_free.get(pid, ready)
-        start_sim = max(ready, team_avail, proj_avail)
+        # respect project dependency
+        if pid in project_next_free:
+            ready = max(ready, project_next_free[pid])
 
-        # Compute end date
-        hours_per_day = r.devs_assigned * 8
-        days_needed = math.ceil(hours_needed / hours_per_day)
-        # BusinessDay arithmetic returns Timestamp, convert back to date
+        # compute days needed
+        hours_per_day = devs_req * 8
+        days_needed   = math.ceil(hours_needed / hours_per_day)
+
+        def fits(s: date) -> bool:
+            """Check that for each business day in [s, s+days_needed) capacity allows devs_req."""
+            for i in range(days_needed):
+                day = (pd.Timestamp(s) + BusinessDay(i)).date()
+                used = busy0 + sum(a["devs"] for a in active_by_team[tid]
+                                   if a["start"] <= day <= a["end"])
+                if used + devs_req > total_devs:
+                    return False
+            return True
+
+        # find earliest start where it fits
+        start_sim = ready
+        while not fits(start_sim):
+            # advance to the next free day for this team
+            overlapping = [a["end"] for a in active_by_team[tid]
+                           if a["start"] <= start_sim <= a["end"]]
+            if overlapping:
+                start_sim = (pd.Timestamp(min(overlapping)) + BusinessDay(1)).date()
+            else:
+                start_sim = (pd.Timestamp(start_sim) + BusinessDay(1)).date()
+
+        # compute end date
         end_ts = pd.Timestamp(start_sim) + BusinessDay(days_needed) - BusinessDay(1)
         end_sim = end_ts.date()
 
-        # Update next free dates
-        next_free = (end_ts + BusinessDay(1)).date()
-        team_next_free[tid]    = next_free
-        project_next_free[pid] = next_free
+        # register this assignment
+        active_by_team[tid].append({
+            "start": start_sim,
+            "end":   end_sim,
+            "devs":  devs_req
+        })
+        project_next_free[pid] = (end_ts + BusinessDay(1)).date()
 
         records.append({
             "project_id":   pid,
@@ -126,7 +151,7 @@ def render_monitoring():
 
     sched = pd.DataFrame(records)
 
-    # 4) Build summary: one row per project
+    # 6) Summarize one row per project
     output = []
     for pid, grp in sched.groupby("project_id"):
         name = grp.iloc[0]["project_name"]
@@ -136,7 +161,7 @@ def render_monitoring():
         start_date = arch["start"]
         est_end    = dqa["end"]
 
-        # Determine current state
+        # determine current state
         if today < start_date:
             state = "Not started"
         else:
@@ -156,5 +181,4 @@ def render_monitoring():
             "Est. End": est_end
         })
 
-    df_out = pd.DataFrame(output)
-    st.table(df_out)
+    st.table(pd.DataFrame(output))
