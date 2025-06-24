@@ -26,7 +26,7 @@ services:
 
   app:
     build:
-      context: ./backend
+      context: ./app
       dockerfile: Dockerfile
     command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
     volumes:
