@@ -98,9 +98,18 @@ class ProjectScheduler:
         """Encuentra la primera fecha donde cabe la asignación"""
         
         candidate_start = earliest_start
+        max_iterations = 365 * 2  # Máximo 2 años en el futuro
+        iterations = 0
         
         while not self._fits_in_period(team_id, devs_needed, days_needed, 
                                       candidate_start, teams, active_by_team):
+            # Protección contra loop infinito
+            iterations += 1
+            if iterations > max_iterations:
+                raise ValueError(f"No se pudo encontrar slot disponible para team {team_id} "
+                               f"después de {max_iterations} iteraciones. "
+                               f"Fecha límite alcanzada: {candidate_start}")
+            
             # Avanzar al siguiente día hábil
             candidate_start = self._next_business_day(candidate_start)
         
