@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import json
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 from .models import Team, Assignment
@@ -42,109 +41,17 @@ class TestCaseBuilder:
             "Dqa": 1.0    # DQA: 1 dev por defecto
         }
         
-        self.effort_presets = {
-            "Pequeño": {"Arch": 8, "Model": 28, "Devs": 20, "Dqa": 12},
-            "Mediano": {"Arch": 16, "Model": 56, "Devs": 40, "Dqa": 24},
-            "Grande": {"Arch": 32, "Model": 112, "Devs": 80, "Dqa": 48},
-            "Crítico": {"Arch": 48, "Model": 168, "Devs": 120, "Dqa": 72}
+        # Matriz de horas por tier y fase según arquitectura APE
+        self.tier_hours_by_phase = {
+            "Arch": {1: 16, 2: 32, 3: 72, 4: 240},
+            "Model": {1: 40, 2: 80, 3: 120, 4: 160},
+            "Devs": {1: 16, 2: 40, 3: 80, 4: 120},
+            "Dqa": {1: 8, 2: 24, 3: 40, 4: 0}  # Tier 4 no disponible para Dqa
         }
+        
+        # Mantener nombres de tamaños para compatibilidad con UI
+        self.size_names = ["Pequeño", "Mediano", "Grande", "Crítico"]
     
-    def get_predefined_scenarios(self) -> Dict[str, Dict]:
-        """Escenarios predefinidos para casos de prueba comunes"""
-        return {
-            "🚀 Escenario Básico": {
-                "description": "3 proyectos con diferentes prioridades y tiers por fase",
-                "projects": [
-                    {
-                        "id": 1, "name": "Proyecto-A", "priority": 1, "tier": "Mediano",
-                        "start_date": datetime.now().date(),
-                        "phases": ["Arch", "Model", "Devs", "Dqa"],
-                        "phase_tiers": {"Arch": 1, "Model": 2, "Devs": 3, "Dqa": 2}
-                    },
-                    {
-                        "id": 2, "name": "Proyecto-B", "priority": 2, "tier": "Mediano", 
-                        "start_date": datetime.now().date(),
-                        "phases": ["Arch", "Model", "Devs", "Dqa"],
-                        "phase_tiers": {"Arch": 1, "Model": 3, "Devs": 3, "Dqa": 3}
-                    },
-                    {
-                        "id": 3, "name": "Proyecto-C", "priority": 3, "tier": "Pequeño",
-                        "start_date": datetime.now().date(),
-                        "phases": ["Arch", "Model", "Devs"],
-                        "phase_tiers": {"Arch": 1, "Model": 1, "Devs": 3}
-                    }
-                ]
-            },
-            "⚡ Alta Presión": {
-                "description": "Múltiples proyectos urgentes con recursos limitados",
-                "projects": [
-                    {
-                        "id": 1, "name": "Urgente-1", "priority": 1, "tier": "Grande",
-                        "start_date": datetime.now().date(),
-                        "phases": ["Arch", "Model", "Devs", "Dqa"],
-                        "phase_tiers": {"Arch": 1, "Model": 4, "Devs": 3, "Dqa": 3}
-                    },
-                    {
-                        "id": 2, "name": "Urgente-2", "priority": 1, "tier": "Grande",
-                        "start_date": datetime.now().date(),
-                        "phases": ["Arch", "Model", "Devs", "Dqa"],
-                        "phase_tiers": {"Arch": 1, "Model": 3, "Devs": 3, "Dqa": 2}
-                    },
-                    {
-                        "id": 3, "name": "Crítico", "priority": 1, "tier": "Crítico",
-                        "start_date": datetime.now().date(),
-                        "phases": ["Arch", "Model", "Devs", "Dqa"],
-                        "phase_tiers": {"Arch": 1, "Model": 4, "Devs": 3, "Dqa": 3}
-                    }
-                ]
-            },
-            "🔄 Proyectos Escalonados": {
-                "description": "Proyectos que inician en diferentes fechas",
-                "projects": [
-                    {
-                        "id": 1, "name": "Fase-1", "priority": 1, "tier": "Mediano",
-                        "start_date": datetime.now().date(),
-                        "phases": ["Arch", "Model", "Devs", "Dqa"],
-                        "phase_tiers": {"Arch": 1, "Model": 2, "Devs": 3, "Dqa": 2}
-                    },
-                    {
-                        "id": 2, "name": "Fase-2", "priority": 2, "tier": "Mediano",
-                        "start_date": datetime.now().date() + timedelta(days=7),
-                        "phases": ["Arch", "Model", "Devs", "Dqa"],
-                        "phase_tiers": {"Arch": 1, "Model": 3, "Devs": 3, "Dqa": 2}
-                    },
-                    {
-                        "id": 3, "name": "Fase-3", "priority": 3, "tier": "Pequeño",
-                        "start_date": datetime.now().date() + timedelta(days=14),
-                        "phases": ["Arch", "Model", "Devs"],
-                        "phase_tiers": {"Arch": 1, "Model": 1, "Devs": 3}
-                    }
-                ]
-            },
-            "🎯 Solo Backend": {
-                "description": "Proyectos que no requieren frontend",
-                "projects": [
-                    {
-                        "id": 1, "name": "API-Core", "priority": 1, "tier": "Grande",
-                        "start_date": datetime.now().date(),
-                        "phases": ["Arch", "Model"],
-                        "phase_tiers": {"Arch": 1, "Model": 4}
-                    },
-                    {
-                        "id": 2, "name": "Microservice-A", "priority": 2, "tier": "Mediano",
-                        "start_date": datetime.now().date(),
-                        "phases": ["Arch", "Model"],
-                        "phase_tiers": {"Arch": 1, "Model": 2}
-                    },
-                    {
-                        "id": 3, "name": "Integration", "priority": 3, "tier": "Pequeño",
-                        "start_date": datetime.now().date(),
-                        "phases": ["Arch", "Model"],
-                        "phase_tiers": {"Arch": 1, "Model": 1}
-                    }
-                ]
-            }
-        }
     
     def render_team_configuration(self) -> Dict[int, Team]:
         """Renderiza la configuración de equipos"""
@@ -197,7 +104,7 @@ class TestCaseBuilder:
                 priority = st.selectbox("Prioridad", [1, 2, 3], help="1 = Alta, 3 = Baja")
             
             with col2:
-                tier = st.selectbox("Tamaño", list(self.effort_presets.keys()))
+                tier = st.selectbox("Tamaño", self.size_names)
                 start_date = st.date_input("Fecha de Inicio", value=datetime.now().date())
             
             with col3:
@@ -224,6 +131,24 @@ class TestCaseBuilder:
                         key=f"tier_{phase}_{len(st.session_state.projects_data)}",
                         help=f"Tier para la fase {phase} (1=Simple, {max_tier}=Complejo)"
                     )
+# Configuración de devs por fase
+            st.write("**👥 Configuración de Devs por Fase:**")
+            st.write("*Configura la cantidad de desarrolladores asignados a cada fase*")
+            
+            phase_devs = {}
+            devs_cols = st.columns(len(phases))
+            
+            for i, phase in enumerate(phases):
+                with devs_cols[i]:
+                    default_devs = self.default_phase_devs.get(phase, 1.0)
+                    
+                    phase_devs[phase] = st.number_input(
+                        f"{phase} Devs",
+                        min_value=0.5, max_value=10.0, step=0.5,
+                        value=default_devs,
+                        key=f"devs_{phase}_{len(st.session_state.projects_data)}",
+                        help=f"Cantidad de devs para la fase {phase}"
+                    )
             
             submitted = st.form_submit_button("➕ Agregar Proyecto", type="primary")
             
@@ -235,10 +160,11 @@ class TestCaseBuilder:
                     "tier": tier,
                     "start_date": start_date,
                     "phases": phases,
-                    "phase_tiers": phase_tiers
+                    "phase_tiers": phase_tiers,
+                    "phase_devs": phase_devs
                 }
                 st.session_state.projects_data.append(new_project)
-                st.success(f"✅ Proyecto '{project_name}' agregado con tiers: {phase_tiers}")
+                st.success(f"✅ Proyecto '{project_name}' agregado con tiers: {phase_tiers} y devs: {phase_devs}")
                 st.rerun()
         
         return st.session_state.projects_data
@@ -267,7 +193,7 @@ class TestCaseBuilder:
                     st.write("**Configuración de Tiers:**")
                     for phase in project['phases']:
                         tier = project.get('phase_tiers', {}).get(phase, self.default_phase_tiers.get(phase, 2))
-                        devs = self.default_phase_devs.get(phase, 1.0)
+                        devs = project.get('phase_devs', {}).get(phase, self.default_phase_devs.get(phase, 1.0))
                         st.write(f"- **{phase}:** Tier {tier}, {devs} devs")
         
         # Detalle por Stage/Fase
@@ -312,13 +238,12 @@ class TestCaseBuilder:
         # Crear tabla detallada por fase
         stage_details = []
         for project in projects_data:
-            effort_preset = self.effort_presets[project["tier"]]
             phase_tiers = project.get("phase_tiers", {})
             
             for phase_order, phase in enumerate(project["phases"]):
                 tier = phase_tiers.get(phase, self.default_phase_tiers.get(phase, 2))
-                devs = self.default_phase_devs.get(phase, 1.0)
-                hours = effort_preset.get(phase, 0)
+                devs = project.get('phase_devs', {}).get(phase, self.default_phase_devs.get(phase, 1.0))
+                hours = self.tier_hours_by_phase.get(phase, {}).get(tier, 16)  # Usar matriz por fase y tier
                 
                 # Calcular duración estimada (8 horas por día)
                 duration_days = max(1, round(hours / (8 * devs)))
@@ -386,7 +311,6 @@ class TestCaseBuilder:
         assignments = []
         
         for project in projects_data:
-            effort_preset = self.effort_presets[project["tier"]]
             phase_tiers = project.get("phase_tiers", {})
             
             for phase_order, phase in enumerate(project["phases"]):
@@ -397,8 +321,11 @@ class TestCaseBuilder:
                 # Obtener tier específico para esta fase
                 phase_tier = phase_tiers.get(phase, self.default_phase_tiers.get(phase, 2))
                 
-                # Obtener devs asignados según patrón APE
-                devs_assigned = self.default_phase_devs.get(phase, 1.0)
+                # Obtener devs asignados desde configuración del proyecto
+                devs_assigned = project.get('phase_devs', {}).get(phase, self.default_phase_devs.get(phase, 1.0))
+                
+                # Calcular horas basado en el tier de la fase usando matriz específica
+                estimated_hours = self.tier_hours_by_phase.get(phase, {}).get(phase_tier, 16)
                 
                 # Crear assignment con ID único
                 assignment_id = project["id"] * 100 + phase_order + 1
@@ -413,7 +340,7 @@ class TestCaseBuilder:
                     tier=phase_tier,
                     devs_assigned=devs_assigned,
                     max_devs=devs_assigned,
-                    estimated_hours=effort_preset.get(phase, 16),
+                    estimated_hours=estimated_hours,
                     ready_to_start_date=project["start_date"],
                     assignment_start_date=project["start_date"]
                 )
@@ -451,6 +378,11 @@ class TestCaseBuilder:
                 tier = phase_tiers.get(phase, self.default_phase_tiers.get(phase, 2))
                 if phase == "Dqa" and tier > 3:
                     errors.append(f"⚠️ Proyecto {project['name']}: DQA no puede tener Tier > 3")
+                
+                # Validar que la matriz tenga valores para la combinación fase-tier
+                hours = self.tier_hours_by_phase.get(phase, {}).get(tier, 0)
+                if hours == 0 and phase == "Dqa" and tier == 4:
+                    errors.append(f"⚠️ Proyecto {project['name']}: DQA Tier 4 no está disponible")
         
         return errors
     
@@ -477,13 +409,12 @@ class TestCaseBuilder:
             
             preview_data = []
             for project in projects_data:
-                effort_preset = self.effort_presets[project["tier"]]
                 phase_tiers = project.get("phase_tiers", {})
                 
                 for phase in project["phases"]:
                     tier = phase_tiers.get(phase, self.default_phase_tiers.get(phase, 2))
-                    devs = self.default_phase_devs.get(phase, 1.0)
-                    hours = effort_preset.get(phase, 0)
+                    devs = project.get('phase_devs', {}).get(phase, self.default_phase_devs.get(phase, 1.0))
+                    hours = self.tier_hours_by_phase.get(phase, {}).get(tier, 16)  # Usar matriz por fase y tier
                     
                     preview_data.append({
                         "Proyecto": project["name"],

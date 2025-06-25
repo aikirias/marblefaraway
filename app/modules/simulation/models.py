@@ -8,11 +8,7 @@ from datetime import date
 from typing import List, Dict, Optional
 
 
-@dataclass
-class TierCapacity:
-    """Capacidad por tier de un equipo"""
-    tier: int
-    hours_per_person: int
+
 
 
 @dataclass
@@ -46,7 +42,6 @@ class Project:
     start_date: date
     due_date_wo_qa: date
     due_date_with_qa: date
-    phase: str = ""  # Campo legacy, puede estar vacío
 
 
 @dataclass

@@ -149,8 +149,8 @@ class ProjectScheduler:
         if days_needed <= 0:
             return start_date
         
-        # Calcular fecha de fin (días_needed - 1 porque el primer día cuenta)
-        end_timestamp = pd.Timestamp(start_date) + BusinessDay(days_needed - 1)
+        # Calcular fecha de fin: una tarea de N días termina N días después del inicio
+        end_timestamp = pd.Timestamp(start_date) + BusinessDay(days_needed)
         return end_timestamp.date()
     
     def _add_business_days(self, start_date: date, days: int) -> date:
