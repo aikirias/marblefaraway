@@ -4,7 +4,7 @@ import json
 import plotly.express as px
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
-from .models import Team, Assignment
+from ..common.models import Team, Assignment
 from .scheduler import ProjectScheduler
 
 class TestCaseBuilder:
@@ -441,7 +441,7 @@ class TestCaseBuilder:
                 st.write(f"DEBUG: {len(projects_data)} projects en datos")
                 
                 # Crear SimulationInput correctamente
-                from .models import SimulationInput, Project
+                from ..common.models import SimulationInput, Project
                 from datetime import timedelta
                 
                 today = min(p["start_date"] for p in projects_data)

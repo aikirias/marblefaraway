@@ -1,14 +1,11 @@
 """
-Modelos actualizados para la simulación de scheduling
-Reflejan la estructura real de la aplicación APE
+Modelos de datos unificados para el sistema APE
+Movidos desde simulation/models.py para uso común en toda la aplicación
 """
 
 from dataclasses import dataclass
 from datetime import date
 from typing import List, Dict, Optional
-
-
-
 
 
 @dataclass
@@ -61,7 +58,7 @@ class Assignment:
     assignment_start_date: date
     status: str = "Not Started"
     
-    # Calculados por la simulación
+    # Calculados por la simulación - NO van a DB
     calculated_start_date: Optional[date] = None
     calculated_end_date: Optional[date] = None
     pending_hours: int = 0

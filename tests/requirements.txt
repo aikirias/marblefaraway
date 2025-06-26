@@ -1,0 +1,7 @@
+# Dependencias de testing para el sistema APE
+pytest>=7.0.0
+pytest-mock>=3.10.0
+pytest-cov>=4.0.0
+freezegun>=1.2.0
+factory-boy>=3.2.0
+sqlalchemy-utils>=0.40.0

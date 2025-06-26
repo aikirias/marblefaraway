@@ -8,7 +8,7 @@ from typing import List, Dict
 import pandas as pd
 from pandas.tseries.offsets import BusinessDay
 
-from .models import Assignment, Team, Project, ScheduleResult, SimulationInput
+from ..common.models import Assignment, Team, Project, ScheduleResult, SimulationInput
 
 
 class ProjectScheduler:
@@ -36,8 +36,16 @@ class ProjectScheduler:
         active_by_team = {tid: [] for tid in teams.keys()}
         project_next_free = {}
         
-        # Ordenar asignaciones por prioridad del proyecto
-        sorted_assignments = sorted(assignments, key=lambda a: a.project_priority)
+        # Ordenar asignaciones por prioridad del proyecto y luego por orden dentro del proyecto
+        # Para APE: Arch (team_id=1) → Model (team_id=2) → Devs (team_id=3) → Dqa (team_id=4)
+        def sort_key(assignment):
+            # Primero por prioridad del proyecto
+            priority = assignment.project_priority
+            # Luego por orden de equipos APE (si aplica)
+            team_order = {1: 1, 2: 2, 3: 3, 4: 4}.get(assignment.team_id, 999)
+            return (priority, team_order, assignment.id)
+        
+        sorted_assignments = sorted(assignments, key=sort_key)
         
         # Procesar cada asignación
         for assignment in sorted_assignments:
@@ -128,6 +136,15 @@ class ProjectScheduler:
         
         team = teams[team_id]
         
+        # Verificar si el equipo tiene capacidad total suficiente
+        if devs_needed > team.total_devs:
+            return False
+        
+        # Verificar si hay capacidad disponible considerando busy_devs
+        available_devs = team.total_devs - team.busy_devs
+        if available_devs <= 0:
+            return False
+        
         for i in range(days_needed):
             check_date = self._add_business_days(start_date, i)
             
@@ -149,8 +166,9 @@ class ProjectScheduler:
         if days_needed <= 0:
             return start_date
         
-        # Calcular fecha de fin: una tarea de N días termina N días después del inicio
-        end_timestamp = pd.Timestamp(start_date) + BusinessDay(days_needed)
+        # Calcular fecha de fin: una tarea de N días termina N-1 días después del inicio
+        # Ejemplo: tarea de 2 días que empieza lunes, termina martes (1 día después)
+        end_timestamp = pd.Timestamp(start_date) + BusinessDay(days_needed - 1)
         return end_timestamp.date()
     
     def _add_business_days(self, start_date: date, days: int) -> date:
