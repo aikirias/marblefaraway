@@ -2,7 +2,7 @@ import streamlit as st
 from datetime import date
 from st_draggable_list import DraggableList
 from modules.common.models import Project, Assignment
-from modules.common.projects_crud import create_project, read_all_projects, update_project
+from modules.common.projects_crud import create_project, read_all_projects, update_project, delete_project
 from modules.common.assignments_crud import create_assignment, read_assignments_by_project, update_assignment
 from modules.common.teams_crud import read_all_teams
 
@@ -15,7 +15,9 @@ def render_projects():
     st.subheader("Create New Project")
     pname = st.text_input("Project Name", key="proj_name")
     start = st.date_input("Start Date", key="proj_start")
-
+   
+    if st.button("Delete Project") and pname:
+        delete_project(pname)
     if st.button("Create Project") and pname:
         # Get next priority
         projects = read_all_projects()

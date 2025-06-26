@@ -14,7 +14,7 @@ class TestSimulationScenarios:
     def test_simple_project_sequential_phases(self):
         """
         CASO CRÍTICO 1: Proyecto simple con 4 fases secuenciales
-        Verificar que Arch → Model → Devs → Dqa se ejecutan en orden
+        Verificar que Arch → Devs → Model → Dqa se ejecutan en orden correcto
         """
         # Setup: 1 proyecto, 4 equipos, 4 asignaciones secuenciales
         teams = {
@@ -67,10 +67,10 @@ class TestSimulationScenarios:
         devs_assignment = next(a for a in result.assignments if a.team_name == "Devs")
         dqa_assignment = next(a for a in result.assignments if a.team_name == "Dqa")
         
-        # Verificar orden secuencial: Arch termina antes que Model empiece
-        assert arch_assignment.calculated_end_date < model_assignment.calculated_start_date
-        assert model_assignment.calculated_end_date < devs_assignment.calculated_start_date
-        assert devs_assignment.calculated_end_date < dqa_assignment.calculated_start_date
+        # Verificar orden secuencial correcto: Arch → Devs → Model → Dqa
+        assert arch_assignment.calculated_end_date < devs_assignment.calculated_start_date
+        assert devs_assignment.calculated_end_date < model_assignment.calculated_start_date
+        assert model_assignment.calculated_end_date < dqa_assignment.calculated_start_date
         
         # Verificar cálculo correcto de fechas
         assert arch_assignment.calculated_start_date == date(2025, 1, 1)
@@ -80,8 +80,8 @@ class TestSimulationScenarios:
         expected_end = date(2025, 1, 2)  # 1 día hábil después
         assert arch_assignment.calculated_end_date == expected_end
         
-        # Model empieza el día siguiente a que termina Arch
-        assert model_assignment.calculated_start_date == date(2025, 1, 3)
+        # Devs empieza el día siguiente a que termina Arch
+        assert devs_assignment.calculated_start_date == date(2025, 1, 3)
     
     def test_multiple_projects_priority_handling(self):
         """
@@ -225,7 +225,7 @@ class TestSimulationScenarios:
     def test_full_ape_workflow_sequence(self):
         """
         CASO CRÍTICO 5: Flujo completo APE con dependencias secuenciales
-        Arch → Model → Devs → Dqa con cálculos reales
+        Arch → Devs → Model → Dqa con cálculos reales
         """
         # Setup equipos especializados según arquitectura APE
         teams = {
@@ -278,25 +278,27 @@ class TestSimulationScenarios:
         devs = next(a for a in result.assignments if a.team_name == "Devs")
         dqa = next(a for a in result.assignments if a.team_name == "Dqa")
         
-        # Verificar secuencia estricta
+        # Verificar secuencia estricta: Arch → Devs → Model → Dqa
         assert arch.calculated_start_date == date(2025, 1, 1)
-        assert arch.calculated_end_date < model.calculated_start_date
-        assert model.calculated_end_date < devs.calculated_start_date
-        assert devs.calculated_end_date < dqa.calculated_start_date
+        assert arch.calculated_end_date < devs.calculated_start_date
+        assert devs.calculated_end_date < model.calculated_start_date
+        assert model.calculated_end_date < dqa.calculated_start_date
         
         # Verificar cálculos específicos
-        # Arch: 16h / (1 dev * 8h/día) = 2 días → termina 1 día después del inicio
+        # Arch: 16h / (1 dev * 8h/día) = 2 días → termina 02/01
         assert arch.calculated_end_date == date(2025, 1, 2)
         
-        # Model empieza día siguiente
-        assert model.calculated_start_date == date(2025, 1, 3)
-        # Model: 80h / (1 dev * 8h/día) = 10 días
-        assert model.calculated_end_date == date(2025, 1, 16)
+        # Devs empieza después de Arch: 160h / (2 devs * 8h/día) = 10 días → 03/01 a 16/01
+        assert devs.calculated_start_date == date(2025, 1, 3)
+        assert devs.calculated_end_date == date(2025, 1, 16)
         
-        # Devs empieza día siguiente
-        assert devs.calculated_start_date == date(2025, 1, 17)
-        # Devs: 160h / (2 devs * 8h/día) = 10 días
-        assert devs.calculated_end_date == date(2025, 1, 30)
+        # Model empieza después de Devs: 80h / (1 dev * 8h/día) = 10 días → 17/01 a 30/01
+        assert model.calculated_start_date == date(2025, 1, 17)
+        assert model.calculated_end_date == date(2025, 1, 30)
+        
+        # Dqa empieza después de Model: 24h / (1 dev * 8h/día) = 3 días → 31/01 a 04/02
+        assert dqa.calculated_start_date == date(2025, 1, 31)
+        assert dqa.calculated_end_date == date(2025, 2, 4)
         
         # Dqa empieza día siguiente
         assert dqa.calculated_start_date == date(2025, 1, 31)

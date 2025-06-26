@@ -37,12 +37,12 @@ class ProjectScheduler:
         project_next_free = {}
         
         # Ordenar asignaciones por prioridad del proyecto y luego por orden dentro del proyecto
-        # Para APE: Arch (team_id=1) → Model (team_id=2) → Devs (team_id=3) → Dqa (team_id=4)
+        # Para APE: Arch (team_id=1) → Devs (team_id=3) → Model (team_id=2) → Dqa (team_id=4)
         def sort_key(assignment):
             # Primero por prioridad del proyecto
             priority = assignment.project_priority
-            # Luego por orden de equipos APE (si aplica)
-            team_order = {1: 1, 2: 2, 3: 3, 4: 4}.get(assignment.team_id, 999)
+            # Luego por orden de equipos APE (orden correcto)
+            team_order = {1: 1, 3: 2, 2: 3, 4: 4}.get(assignment.team_id, 999)  # Arch → Devs → Model → Dqa
             return (priority, team_order, assignment.id)
         
         sorted_assignments = sorted(assignments, key=sort_key)
@@ -68,6 +68,17 @@ class ProjectScheduler:
         
         # Calcular horas necesarias basado en tier y devs asignados
         hours_needed = assignment.get_hours_needed(team)
+        
+        # MANEJO ESPECIAL PARA ASIGNACIONES CON 0 HORAS
+        if hours_needed == 0:
+            # Las asignaciones con 0 horas no consumen tiempo ni recursos
+            # Se marcan como completadas inmediatamente sin afectar dependencias
+            assignment.calculated_start_date = today
+            assignment.calculated_end_date = today
+            assignment.pending_hours = 0
+            # NO actualizar project_next_free para asignaciones con 0 horas
+            # NO registrar en active_by_team ya que no consumen recursos
+            return
         
         # Fecha mínima de inicio (constraint de ready_to_start_date)
         ready = max(assignment.ready_to_start_date, today)
