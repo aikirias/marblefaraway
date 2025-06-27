@@ -66,10 +66,6 @@ class Assignment:
     
     def get_hours_needed(self, team: Team) -> int:
         """Calcula horas totales necesarias basado en tier y devs asignados"""
-        # Si estimated_hours es 0, siempre devolver 0 (sin trabajo real)
-        if self.estimated_hours == 0:
-            return 0
-        
         hours_per_person = team.get_hours_per_person_for_tier(self.tier)
         if hours_per_person == 0:
             return self.estimated_hours  # Fallback a horas estimadas manuales

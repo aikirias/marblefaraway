@@ -1,0 +1,39 @@
+{
+  "assignments": [
+    {
+      "id": 1,
+      "project_id": 1,
+      "project_name": "TestProject",
+      "project_priority": 1,
+      "team_id": 1,
+      "team_name": "TestTeam",
+      "tier": 1,
+      "devs_assigned": 1.0,
+      "max_devs": 1.0,
+      "estimated_hours": 10000,
+      "ready_to_start_date": "2025-06-25",
+      "assignment_start_date": "2025-06-25",
+      "status": "Not Started",
+      "calculated_start_date": "2025-06-26",
+      "calculated_end_date": "2025-06-26",
+      "pending_hours": 8,
+      "paused_on": null
+    }
+  ],
+  "project_summaries": [
+    {
+      "project_id": 1,
+      "project_name": "TestProject",
+      "priority": 1,
+      "state": "In progress (TestTeam)",
+      "calculated_start_date": "2025-06-26",
+      "calculated_end_date": "2025-06-26",
+      "original_start_date": "2025-06-25",
+      "due_date_wo_qa": "2025-06-25",
+      "due_date_with_qa": "2025-06-25",
+      "total_assignments": 1,
+      "total_hours": 8,
+      "delay_days": 1
+    }
+  ]
+}

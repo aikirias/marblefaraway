@@ -103,3 +103,31 @@ def delete_project(project_id: int):
             projects_table.delete()
             .where(projects_table.c.id == project_id)
         )
+
+
+def delete_project_by_name(project_name: str) -> bool:
+    """Borrar project por nombre, incluyendo sus asignaciones"""
+    from .assignments_crud import delete_assignments_by_project
+    
+    with engine.begin() as conn:
+        # Primero buscar el proyecto por nombre
+        result = conn.execute(
+            sa.select(projects_table.c.id)
+            .where(projects_table.c.name == project_name)
+        ).first()
+        
+        if not result:
+            return False  # Proyecto no encontrado
+        
+        project_id = result.id
+        
+        # Borrar todas las asignaciones del proyecto
+        delete_assignments_by_project(project_id)
+        
+        # Borrar el proyecto
+        conn.execute(
+            projects_table.delete()
+            .where(projects_table.c.id == project_id)
+        )
+        
+        return True

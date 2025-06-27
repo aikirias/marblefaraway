@@ -217,3 +217,12 @@ def delete_assignment(assignment_id: int):
             project_team_assignments_table.delete()
             .where(project_team_assignments_table.c.id == assignment_id)
         )
+
+
+def delete_assignments_by_project(project_id: int):
+    """Borrar todas las asignaciones de un proyecto"""
+    with engine.begin() as conn:
+        conn.execute(
+            project_team_assignments_table.delete()
+            .where(project_team_assignments_table.c.project_id == project_id)
+        )

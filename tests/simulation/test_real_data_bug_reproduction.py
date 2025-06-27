@@ -161,9 +161,11 @@ class TestRealDataBugReproduction:
             # Hacer que el test falle para mostrar el problema
             assert False, f"BUG: Devs no puede empezar antes que Arch. Arch empieza: {b_arch.calculated_start_date}, Devs empieza: {b_devs.calculated_start_date}"
         
-        # Verificar que Arch con 0 horas se procesa correctamente
-        if b_arch.calculated_start_date != b_arch.calculated_end_date:
-            print(f"🐛 BUG: Arch con 0 horas debería empezar y terminar el mismo día")
-            assert False, f"Arch con 0 horas debería empezar y terminar el mismo día. Start: {b_arch.calculated_start_date}, End: {b_arch.calculated_end_date}"
+        # Verificar que Arch con 0 horas usa tier capacity como default
+        # Con estimated_hours=0, debería usar tier capacity (240 * 4 devs = 960 horas)
+        expected_hours = 240 * 4  # tier 4 capacity * devs_assigned
+        if b_arch.pending_hours != expected_hours:
+            print(f"🐛 BUG: Arch con estimated_hours=0 debería usar tier capacity")
+            assert False, f"Arch debería usar tier capacity. Expected: {expected_hours}, Got: {b_arch.pending_hours}"
         
         print(f"✅ Secuencia correcta mantenida a pesar de horas=0")

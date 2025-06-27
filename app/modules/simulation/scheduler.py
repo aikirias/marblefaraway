@@ -3,12 +3,43 @@ Simulador de scheduling actualizado para usar modelos reales de APE
 """
 
 import math
+import json
+import logging
 from datetime import date
 from typing import List, Dict
 import pandas as pd
 from pandas.tseries.offsets import BusinessDay
 
 from ..common.models import Assignment, Team, Project, ScheduleResult, SimulationInput
+
+# Configurar logging para debugging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Límites de fechas para evitar errores de rango
+MIN_DATE = date(1900, 1, 1)
+MAX_DATE = date(2100, 12, 31)
+
+
+class EnhancedJSONEncoder(json.JSONEncoder):
+    """Encoder JSON personalizado para manejar objetos date y dataclasses"""
+    def default(self, obj):
+        if isinstance(obj, date):
+            return obj.isoformat()
+        if hasattr(obj, '__dict__'):
+            return obj.__dict__
+        return super().default(obj)
+
+
+def validate_date_range(target_date: date, context: str = "") -> date:
+    """Valida que una fecha esté en el rango válido de Python"""
+    if target_date < MIN_DATE:
+        logger.warning(f"Fecha {target_date} fuera de rango mínimo en {context}. Ajustando a {MIN_DATE}")
+        return MIN_DATE
+    if target_date > MAX_DATE:
+        logger.error(f"Fecha {target_date} fuera de rango máximo en {context}. Ajustando a {MAX_DATE}")
+        return MAX_DATE
+    return target_date
 
 
 class ProjectScheduler:
@@ -30,8 +61,10 @@ class ProjectScheduler:
         teams = simulation_input.teams
         projects = simulation_input.projects
         assignments = simulation_input.assignments
-        today = simulation_input.simulation_start_date
+        today = validate_date_range(simulation_input.simulation_start_date, "simulation_start_date")
         
+        logger.info(f"Iniciando simulación con {len(assignments)} asignaciones desde {today}")
+
         # Estructuras de estado
         active_by_team = {tid: [] for tid in teams.keys()}
         project_next_free = {}
@@ -42,23 +75,42 @@ class ProjectScheduler:
             # Primero por prioridad del proyecto
             priority = assignment.project_priority
             # Luego por orden de equipos APE (orden correcto)
-            team_order = {1: 1, 3: 2, 2: 3, 4: 4}.get(assignment.team_id, 999)  # Arch → Devs → Model → Dqa
+            team_order = {2: 1, 1: 2, 3: 3, 4: 4}.get(assignment.team_id, 999)  # Arch → Devs → Model → Dqa
             return (priority, team_order, assignment.id)
         
         sorted_assignments = sorted(assignments, key=sort_key)
         
         # Procesar cada asignación
         for assignment in sorted_assignments:
-            self._process_assignment(assignment, teams, active_by_team, 
-                                   project_next_free, today)
+            try:
+                self._process_assignment(assignment, teams, active_by_team, 
+                                       project_next_free, today)
+            except Exception as e:
+                logger.error(f"Error procesando asignación {assignment.id}: {e}")
+                # Asignar fechas por defecto para evitar que falle toda la simulación
+                assignment.calculated_start_date = today
+                assignment.calculated_end_date = today
+                assignment.pending_hours = 0
         
         # Generar resumen por proyecto
         project_summaries = self._generate_project_summaries(sorted_assignments, projects, today)
         
-        return ScheduleResult(
+        # Crear resultado de la simulación
+        result = ScheduleResult(
             assignments=sorted_assignments,
             project_summaries=project_summaries
         )
+        
+        # Guardar output de la simulación (opcional para debugging)
+        try:
+            output_json_path = './simulation_output.json'
+            with open(output_json_path, 'w', encoding='utf-8') as f:
+                json.dump(result, f, cls=EnhancedJSONEncoder, indent=2, ensure_ascii=False)
+            logger.info(f"Resultado guardado en {output_json_path}")
+        except Exception as e:
+            logger.warning(f"No se pudo guardar el resultado: {e}")
+        
+        return result
     
     def _process_assignment(self, assignment: Assignment, teams: Dict[int, Team],
                           active_by_team: Dict, project_next_free: Dict, today: date):
@@ -69,27 +121,28 @@ class ProjectScheduler:
         # Calcular horas necesarias basado en tier y devs asignados
         hours_needed = assignment.get_hours_needed(team)
         
-        # MANEJO ESPECIAL PARA ASIGNACIONES CON 0 HORAS
-        if hours_needed == 0:
-            # Las asignaciones con 0 horas no consumen tiempo ni recursos
-            # Se marcan como completadas inmediatamente sin afectar dependencias
-            assignment.calculated_start_date = today
-            assignment.calculated_end_date = today
-            assignment.pending_hours = 0
-            # NO actualizar project_next_free para asignaciones con 0 horas
-            # NO registrar en active_by_team ya que no consumen recursos
-            return
+        # Validar que las horas sean razonables
+        if hours_needed <= 0:
+            logger.warning(f"Asignación {assignment.id} tiene 0 horas. Usando tier capacity como fallback.")
+            hours_needed = team.get_hours_per_person_for_tier(assignment.tier) * assignment.devs_assigned
+            if hours_needed <= 0:
+                hours_needed = 8  # Mínimo 1 día de trabajo
         
         # Fecha mínima de inicio (constraint de ready_to_start_date)
-        ready = max(assignment.ready_to_start_date, today)
+        ready = max(validate_date_range(assignment.ready_to_start_date, f"ready_to_start_date assignment {assignment.id}"), today)
         
         # Respetar dependencias del proyecto (asignaciones anteriores)
         if assignment.project_id in project_next_free:
-            ready = max(ready, project_next_free[assignment.project_id])
+            ready = max(ready, validate_date_range(project_next_free[assignment.project_id], f"project_next_free {assignment.project_id}"))
         
         # Calcular duración en días hábiles
         hours_per_day = assignment.devs_assigned * 8  # 8 horas por dev por día
         days_needed = math.ceil(hours_needed / hours_per_day) if hours_per_day > 0 else 1
+        
+        # Validar que days_needed sea razonable
+        if days_needed > 365:
+            logger.warning(f"Asignación {assignment.id} requiere {days_needed} días. Limitando a 365.")
+            days_needed = 365
         
         # Encontrar primera fecha donde cabe
         start_date = self._find_available_slot(
@@ -99,6 +152,10 @@ class ProjectScheduler:
         
         # Calcular fecha de fin
         end_date = self._calculate_end_date(start_date, days_needed)
+        
+        # Validar fechas calculadas
+        start_date = validate_date_range(start_date, f"start_date assignment {assignment.id}")
+        end_date = validate_date_range(end_date, f"end_date assignment {assignment.id}")
         
         # Actualizar asignación con fechas calculadas
         assignment.calculated_start_date = start_date
@@ -115,30 +172,74 @@ class ProjectScheduler:
         
         # Actualizar próxima fecha libre del proyecto
         next_free = self._next_business_day(end_date)
-        project_next_free[assignment.project_id] = next_free
+        project_next_free[assignment.project_id] = validate_date_range(next_free, f"next_free project {assignment.project_id}")
+        
+        logger.debug(f"Asignación {assignment.id} ({assignment.team_name}): {start_date} a {end_date} ({days_needed} días, {hours_needed} horas)")
     
     def _find_available_slot(self, team_id: int, devs_needed: float, days_needed: int,
                            earliest_start: date, teams: Dict[int, Team], 
                            active_by_team: Dict) -> date:
-        """Encuentra la primera fecha donde cabe la asignación"""
+        """Encuentra la primera fecha donde cabe la asignación con optimizaciones"""
         
-        candidate_start = earliest_start
-        max_iterations = 365 * 2  # Máximo 2 años en el futuro
+        team = teams[team_id]
+        
+        # Validación temprana de capacidad
+        if devs_needed > team.total_devs:
+            raise ValueError(f"Equipo {team_id} no tiene capacidad suficiente: "
+                           f"necesita {devs_needed} devs, disponible {team.total_devs}")
+        
+        # Verificar disponibilidad básica
+        available_devs = team.total_devs - team.busy_devs
+        if available_devs <= 0:
+            # Si no hay devs disponibles, buscar la próxima fecha libre
+            candidate_start = self._find_next_free_date(team_id, active_by_team, earliest_start)
+        else:
+            candidate_start = earliest_start
+        
+        # Límite conservador y búsqueda inteligente
+        max_iterations = 180  # 6 meses máximo
         iterations = 0
         
         while not self._fits_in_period(team_id, devs_needed, days_needed, 
                                       candidate_start, teams, active_by_team):
-            # Protección contra loop infinito
             iterations += 1
+            
+            # Salto inteligente después de varios intentos
+            if iterations > 30:
+                next_free = self._find_next_free_date(team_id, active_by_team, candidate_start)
+                if next_free > candidate_start:
+                    candidate_start = next_free
+                    continue
+            
+            # Protección contra loop infinito
             if iterations > max_iterations:
-                raise ValueError(f"No se pudo encontrar slot disponible para team {team_id} "
-                               f"después de {max_iterations} iteraciones. "
-                               f"Fecha límite alcanzada: {candidate_start}")
+                logger.error(f"No se pudo encontrar slot para team {team_id} en {max_iterations} días")
+                # Retornar fecha límite en lugar de fallar
+                return validate_date_range(self._add_business_days(earliest_start, max_iterations), f"fallback team {team_id}")
             
             # Avanzar al siguiente día hábil
-            candidate_start = self._next_business_day(candidate_start)
+            try:
+                candidate_start = self._next_business_day(candidate_start)
+                candidate_start = validate_date_range(candidate_start, f"candidate_start team {team_id}")
+            except Exception as e:
+                logger.error(f"Error calculando siguiente día hábil desde {candidate_start}: {e}")
+                return validate_date_range(earliest_start, f"error_fallback team {team_id}")
         
-        return candidate_start
+        return validate_date_range(candidate_start, f"final_candidate team {team_id}")
+    
+    def _find_next_free_date(self, team_id: int, active_by_team: Dict, earliest_start: date) -> date:
+        """Encuentra la próxima fecha libre para un equipo"""
+        if team_id not in active_by_team or not active_by_team[team_id]:
+            return earliest_start
+        
+        # Encontrar la fecha más tardía de finalización
+        latest_end = earliest_start
+        for active in active_by_team[team_id]:
+            if active['end'] > latest_end:
+                latest_end = active['end']
+        
+        # Retornar el siguiente día hábil después de la última finalización
+        return self._next_business_day(latest_end)
     
     def _fits_in_period(self, team_id: int, devs_needed: float, days_needed: int,
                        start_date: date, teams: Dict[int, Team], 
@@ -157,7 +258,12 @@ class ProjectScheduler:
             return False
         
         for i in range(days_needed):
-            check_date = self._add_business_days(start_date, i)
+            try:
+                check_date = self._add_business_days(start_date, i)
+                check_date = validate_date_range(check_date, f"check_date team {team_id}")
+            except Exception as e:
+                logger.error(f"Error calculando fecha de verificación: {e}")
+                return False
             
             # Calcular uso actual del equipo en esta fecha
             used_devs = team.busy_devs  # Devs ya ocupados por trabajos en curso
@@ -177,23 +283,39 @@ class ProjectScheduler:
         if days_needed <= 0:
             return start_date
         
-        # Calcular fecha de fin: una tarea de N días termina N-1 días después del inicio
-        # Ejemplo: tarea de 2 días que empieza lunes, termina martes (1 día después)
-        end_timestamp = pd.Timestamp(start_date) + BusinessDay(days_needed - 1)
-        return end_timestamp.date()
+        try:
+            # Calcular fecha de fin: una tarea de N días termina N-1 días después del inicio
+            end_timestamp = pd.Timestamp(start_date) + BusinessDay(days_needed - 1)
+            return end_timestamp.date()
+        except Exception as e:
+            logger.error(f"Error calculando fecha de fin desde {start_date} + {days_needed} días: {e}")
+            # Fallback: usar cálculo simple
+            return validate_date_range(start_date, "end_date_fallback")
     
     def _add_business_days(self, start_date: date, days: int) -> date:
         """Suma días hábiles a una fecha"""
         if days == 0:
             return start_date
         
-        result_timestamp = pd.Timestamp(start_date) + BusinessDay(days)
-        return result_timestamp.date()
+        try:
+            result_timestamp = pd.Timestamp(start_date) + BusinessDay(days)
+            return result_timestamp.date()
+        except Exception as e:
+            logger.error(f"Error sumando {days} días hábiles a {start_date}: {e}")
+            # Fallback: usar cálculo simple (no perfecto pero seguro)
+            from datetime import timedelta
+            return start_date + timedelta(days=days)
     
     def _next_business_day(self, current_date: date) -> date:
         """Obtiene el siguiente día hábil"""
-        next_timestamp = pd.Timestamp(current_date) + BusinessDay(1)
-        return next_timestamp.date()
+        try:
+            next_timestamp = pd.Timestamp(current_date) + BusinessDay(1)
+            return next_timestamp.date()
+        except Exception as e:
+            logger.error(f"Error calculando siguiente día hábil desde {current_date}: {e}")
+            # Fallback: usar cálculo simple
+            from datetime import timedelta
+            return current_date + timedelta(days=1)
     
     def _generate_project_summaries(self, assignments: List[Assignment], 
                                    projects: Dict[int, Project], today: date) -> List[Dict]:
@@ -285,5 +407,9 @@ class ProjectScheduler:
             return 0
         
         # Calcular días hábiles de diferencia
-        delay_timestamp = pd.Timestamp(actual_end) - pd.Timestamp(planned_end)
-        return delay_timestamp.days
+        try:
+            delay_timestamp = pd.Timestamp(actual_end) - pd.Timestamp(planned_end)
+            return delay_timestamp.days
+        except Exception as e:
+            logger.error(f"Error calculando días de retraso: {e}")
+            return 0

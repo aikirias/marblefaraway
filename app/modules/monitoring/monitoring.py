@@ -4,10 +4,53 @@ import streamlit as st
 import pandas as pd
 import sqlalchemy as sa
 import math
+import logging
 from datetime import date
 from pandas.tseries.offsets import BusinessDay
 from sqlalchemy import func
-from modules.common.db import (
+
+# Configurar logging para debugging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Límites de fechas para evitar errores de rango
+MIN_DATE = date(1900, 1, 1)
+MAX_DATE = date(2100, 12, 31)
+
+
+def validate_date_range(target_date: date, context: str = "") -> date:
+    """Valida que una fecha esté en el rango válido de Python"""
+    if target_date < MIN_DATE:
+        logger.warning(f"Fecha {target_date} fuera de rango mínimo en {context}. Ajustando a {MIN_DATE}")
+        return MIN_DATE
+    if target_date > MAX_DATE:
+        logger.error(f"Fecha {target_date} fuera de rango máximo en {context}. Ajustando a {MAX_DATE}")
+        return MAX_DATE
+    return target_date
+
+
+def safe_business_day_calculation(base_date: date, days_offset: int, context: str = "") -> date:
+    """Calcula días hábiles de manera segura, evitando fechas fuera de rango"""
+    try:
+        # Validar fecha base
+        base_date = validate_date_range(base_date, f"base_date in {context}")
+        
+        # Calcular nueva fecha
+        result_timestamp = pd.Timestamp(base_date) + BusinessDay(days_offset)
+        result_date = result_timestamp.date()
+        
+        # Validar resultado
+        return validate_date_range(result_date, f"result in {context}")
+        
+    except Exception as e:
+        logger.error(f"Error en cálculo de días hábiles en {context}: {e}")
+        logger.error(f"  base_date: {base_date}, days_offset: {days_offset}")
+        
+        # Fallback seguro
+        from datetime import timedelta
+        fallback_date = base_date + timedelta(days=days_offset)
+        return validate_date_range(fallback_date, f"fallback in {context}")
+from ..common.db import (
     engine,
     projects_table,
     teams_table,
@@ -110,28 +153,60 @@ def render_monitoring():
 
         def fits(s: date) -> bool:
             """Check that for each business day in [s, s+days_needed) capacity allows devs_req."""
-            for i in range(days_needed):
-                day = (pd.Timestamp(s) + BusinessDay(i)).date()
-                used = busy0 + sum(a["devs"] for a in active_by_team[tid]
-                                   if a["start"] <= day <= a["end"])
-                if used + devs_req > total_devs:
-                    return False
-            return True
+            try:
+                s = validate_date_range(s, f"fits() start date for team {tid}")
+                for i in range(days_needed):
+                    day = safe_business_day_calculation(s, i, f"fits() day {i} for team {tid}")
+                    used = busy0 + sum(a["devs"] for a in active_by_team[tid]
+                                       if a["start"] <= day <= a["end"])
+                    if used + devs_req > total_devs:
+                        return False
+                return True
+            except Exception as e:
+                logger.error(f"Error en fits() para team {tid}: {e}")
+                return False
 
         # find earliest start where it fits
-        start_sim = ready
-        while not fits(start_sim):
-            # advance to the next free day for this team
-            overlapping = [a["end"] for a in active_by_team[tid]
-                           if a["start"] <= start_sim <= a["end"]]
-            if overlapping:
-                start_sim = (pd.Timestamp(min(overlapping)) + BusinessDay(1)).date()
-            else:
-                start_sim = (pd.Timestamp(start_sim) + BusinessDay(1)).date()
+        start_sim = validate_date_range(ready, f"initial start_sim for team {tid}")
+        max_iterations = 180  # Límite para evitar bucles infinitos
+        iterations = 0
+        
+        while not fits(start_sim) and iterations < max_iterations:
+            iterations += 1
+            logger.debug(f"Iteración {iterations} buscando slot para team {tid}, fecha actual: {start_sim}")
+            
+            try:
+                # advance to the next free day for this team
+                overlapping = [a["end"] for a in active_by_team[tid]
+                               if a["start"] <= start_sim <= a["end"]]
+                if overlapping:
+                    min_end = min(overlapping)
+                    start_sim = safe_business_day_calculation(min_end, 1, f"overlapping advance team {tid}")
+                else:
+                    start_sim = safe_business_day_calculation(start_sim, 1, f"normal advance team {tid}")
+            except Exception as e:
+                logger.error(f"Error avanzando fecha para team {tid}: {e}")
+                # Fallback: usar fecha actual + 1 día
+                from datetime import timedelta
+                start_sim = validate_date_range(start_sim + timedelta(days=1), f"fallback advance team {tid}")
+        
+        if iterations >= max_iterations:
+            logger.error(f"No se pudo encontrar slot para team {tid} después de {max_iterations} iteraciones")
+            # Usar fecha de ready como fallback
+            start_sim = validate_date_range(ready, f"max_iterations fallback team {tid}")
 
         # compute end date
-        end_ts = pd.Timestamp(start_sim) + BusinessDay(days_needed) - BusinessDay(1)
-        end_sim = end_ts.date()
+        try:
+            start_sim = validate_date_range(start_sim, f"final start_sim for team {tid}")
+            end_ts = pd.Timestamp(start_sim) + BusinessDay(days_needed) - BusinessDay(1)
+            end_sim = validate_date_range(end_ts.date(), f"end_sim for team {tid}")
+            next_free = safe_business_day_calculation(end_sim, 1, f"project_next_free for project {pid}")
+        except Exception as e:
+            logger.error(f"Error calculando fechas de fin para team {tid}: {e}")
+            # Fallback seguro
+            from datetime import timedelta
+            end_sim = validate_date_range(start_sim + timedelta(days=days_needed), f"fallback end_sim team {tid}")
+            next_free = validate_date_range(end_sim + timedelta(days=1), f"fallback next_free project {pid}")
 
         # register this assignment
         active_by_team[tid].append({
@@ -139,7 +214,7 @@ def render_monitoring():
             "end":   end_sim,
             "devs":  devs_req
         })
-        project_next_free[pid] = (end_ts + BusinessDay(1)).date()
+        project_next_free[pid] = next_free
 
         records.append({
             "project_id":   pid,

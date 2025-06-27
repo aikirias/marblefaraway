@@ -2,8 +2,8 @@ import streamlit as st
 from datetime import date
 from st_draggable_list import DraggableList
 from modules.common.models import Project, Assignment
-from modules.common.projects_crud import create_project, read_all_projects, update_project, delete_project
-from modules.common.assignments_crud import create_assignment, read_assignments_by_project, update_assignment
+from modules.common.projects_crud import create_project, read_all_projects, update_project, delete_project, delete_project_by_name
+from modules.common.assignments_crud import create_assignment, read_assignments_by_project, update_assignment, delete_assignment
 from modules.common.teams_crud import read_all_teams
 
 def render_projects():
@@ -16,8 +16,6 @@ def render_projects():
     pname = st.text_input("Project Name", key="proj_name")
     start = st.date_input("Start Date", key="proj_start")
    
-    if st.button("Delete Project") and pname:
-        delete_project(pname)
     if st.button("Create Project") and pname:
         # Get next priority
         projects = read_all_projects()
@@ -62,8 +60,39 @@ def render_projects():
         
         st.success(f"Project '{pname}' created with ID {proj_id} and default assignments.")
 
+    # ————————————————————————————————
+    # 2) Delete Project
+    # ————————————————————————————————
+    st.subheader("Delete Project")
+    projects = read_all_projects()
+    if projects:
+        project_names = [p.name for p in projects.values()]
+        selected_project_to_delete = st.selectbox(
+            "Select Project to Delete",
+            [""] + project_names,
+            key="delete_project_select"
+        )
+        
+        if selected_project_to_delete:
+            st.warning(f"⚠️ This will permanently delete '{selected_project_to_delete}' and all its assignments!")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🗑️ Confirm Delete", type="primary", key="confirm_delete"):
+                    if delete_project_by_name(selected_project_to_delete):
+                        st.success(f"Project '{selected_project_to_delete}' and all its assignments have been deleted.")
+                        st.rerun()
+                    else:
+                        st.error(f"Project '{selected_project_to_delete}' not found.")
+            
+            with col2:
+                if st.button("Cancel", key="cancel_delete"):
+                    st.rerun()
+    else:
+        st.info("No projects available to delete.")
+
     # --------------------------------------------
-    # 2) Reorder Projects
+    # 3) Reorder Projects
     # --------------------------------------------
     st.subheader("Reorder Projects")
     projects = read_all_projects()
@@ -84,7 +113,7 @@ def render_projects():
         st.success("Project priorities updated.")
 
     # --------------------------------------------
-    # 3) Edit Team Assignments
+    # 4) Edit Team Assignments
     # --------------------------------------------
     st.subheader("Edit Team Assignments")
     project_names = [p.name for p in sorted_projects]
