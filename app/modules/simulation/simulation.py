@@ -18,31 +18,42 @@ def render_simulation():
 def render_real_data_simulation():
     """Renderiza simulación con datos reales de la DB con controles de prioridad"""
     
-    # 🚀 OPTIMIZACIÓN: Cache de datos iniciales para evitar cargas repetidas
-    @st.cache_data(ttl=300)  # Cache por 5 minutos
-    def load_cached_initial_data():
-        return load_simulation_input_from_db(date.today())
-    
-    # Cargar datos iniciales con cache
+    # Cargar datos iniciales directamente (sin cache problemático)
     try:
         with st.spinner("Cargando datos desde la base de datos..."):
-            initial_data = load_cached_initial_data()
+            initial_data = load_simulation_input_from_db(date.today())
+            
+            if initial_data is None:
+                st.error("Error: No se pudieron cargar los datos desde la base de datos")
+                return
+                
+            st.write("🔍 **DEBUG - Datos Cargados:**")
+            st.write(f"- Equipos cargados: {len(initial_data.teams)}")
+            st.write(f"- Proyectos cargados: {len(initial_data.projects)}")
+            st.write(f"- Asignaciones cargadas: {len(initial_data.assignments)}")
     except Exception as e:
         st.error(f"Error cargando datos: {str(e)}")
         return
     
+    # Verificar que hay datos</search>    
     # Verificar que hay datos
     if not initial_data.teams:
         st.error("No hay equipos en la base de datos. Crea equipos primero en la pestaña Teams.")
         return
     
+    # Verificar que hay datos
+    
     if not initial_data.projects:
         st.error("No hay proyectos en la base de datos. Crea proyectos primero en la pestaña Projects.")
         return
     
+    # Verificar que hay datos
+    
     if not initial_data.assignments:
         st.error("No hay asignaciones en la base de datos. Los proyectos necesitan asignaciones de equipos.")
         return
+    
+    # Verificar que hay datos
     
     # Control de prioridades (en memoria)
     st.subheader("🎯 Control de Prioridades (Simulación)")
@@ -80,12 +91,59 @@ def render_real_data_simulation():
     
     # 🚀 OPTIMIZACIÓN: Control más inteligente de ejecución automática
     manual_run = st.button("🚀 Ejecutar Simulación", key="run_real_sim")
+    # 🐛 DEBUG: Detectar cambios en equipos/configuración
+    current_teams_hash = hash(str(sorted([(t.id, t.name, t.total_devs, t.busy_devs) for t in initial_data.teams.values()])))
+    last_teams_hash = st.session_state.get('last_teams_hash', None)
+    teams_changed = last_teams_hash != current_teams_hash
+    
+    st.write("🔍 **DEBUG - Detección de Cambios en Equipos:**")
+    st.write(f"- current_teams_hash: {current_teams_hash}")
+    st.write(f"- last_teams_hash: {last_teams_hash}")
+    st.write(f"- teams_changed: {teams_changed}")
+    
+    if teams_changed:
+        st.session_state['last_teams_hash'] = current_teams_hash
+        st.write("⚠️ **CAMBIO DETECTADO EN EQUIPOS - Debería re-ejecutar simulación**")
+    
+    
+    # 🐛 DEBUG: Logs para diagnosticar problema de re-ejecución
+    st.write("🔍 **DEBUG - Estado de Re-ejecución:**")
+    st.write(f"- auto_run: {auto_run}")
+    st.write(f"- priority_overrides: {priority_overrides}")
+    st.write(f"- last_priority_overrides: {st.session_state.get('last_priority_overrides', 'None')}")
+    st.write(f"- manual_run: {manual_run}")
     
     # Solo ejecutar automáticamente si hay cambios significativos y auto_run está habilitado
     auto_should_run = (auto_run and priority_overrides and 
                       st.session_state.get('last_priority_overrides') != priority_overrides)
     
+    st.write(f"- auto_should_run: {auto_should_run}")
+    
     run_simulation = manual_run or auto_should_run
+    
+    # ✅ CORRECCIÓN: Lógica de ejecución mejorada que detecta todos los cambios
+    should_run_due_to_changes = (
+        auto_run and (
+            # Cambios en prioridades
+            (priority_overrides and st.session_state.get('last_priority_overrides') != priority_overrides) or
+            # Cambios en equipos/configuración
+            teams_changed
+        )
+    )
+    
+    run_simulation_corrected = manual_run or should_run_due_to_changes
+    
+    st.write("🔍 **DEBUG - Lógica de Ejecución Corregida:**")
+    st.write(f"- manual_run: {manual_run}")
+    st.write(f"- should_run_due_to_changes: {should_run_due_to_changes}")
+    st.write(f"- **run_simulation_corrected: {run_simulation_corrected}**")
+    st.write("---")
+    
+    # Usar la lógica corregida
+    run_simulation = run_simulation_corrected
+    
+    st.write(f"- **run_simulation: {run_simulation}**")
+    st.write("---")
     
     # Guardar estado de prioridades para evitar re-ejecuciones innecesarias
     if run_simulation:
@@ -98,6 +156,16 @@ def render_real_data_simulation():
         st.session_state.simulation_input_data = None
     
     if run_simulation:
+        # 🐛 DEBUG: Estado del session_state antes de ejecutar
+        st.write("🔍 **DEBUG - Estado Session State:**")
+        st.write(f"- 'simulation_result' en session_state: {'simulation_result' in st.session_state}")
+        st.write(f"- 'simulation_input_data' en session_state: {'simulation_input_data' in st.session_state}")
+        if 'simulation_result' in st.session_state:
+            st.write(f"- simulation_result es None: {st.session_state.simulation_result is None}")
+        if 'simulation_input_data' in st.session_state:
+            st.write(f"- simulation_input_data es None: {st.session_state.simulation_input_data is None}")
+        st.write("---")
+        
         try:
             # Aplicar overrides de prioridad
             simulation_input = load_simulation_input_from_db(sim_start_date)
