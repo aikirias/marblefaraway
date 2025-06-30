@@ -63,8 +63,25 @@ class ProjectScheduler:
         assignments = simulation_input.assignments
         today = validate_date_range(simulation_input.simulation_start_date, "simulation_start_date")
         
-        logger.info(f"Iniciando simulación con {len(assignments)} asignaciones desde {today}")
-
+        # Filtrar solo proyectos activos para simulación
+        active_projects = {
+            pid: p for pid, p in projects.items() 
+            if hasattr(p, 'phase') and p.phase == 'active'
+        }
+        
+        # Si no hay proyectos activos, incluir todos (compatibilidad hacia atrás)
+        if not active_projects and projects:
+            active_projects = projects
+            logger.info("No se encontraron proyectos activos, incluyendo todos los proyectos")
+        
+        # Filtrar assignments de proyectos activos
+        active_assignments = [
+            a for a in assignments 
+            if a.project_id in active_projects
+        ]
+        
+        logger.info(f"Simulando {len(active_projects)} proyectos activos con {len(active_assignments)} asignaciones")
+        
         # Estructuras de estado
         active_by_team = {tid: [] for tid in teams.keys()}
         project_next_free = {}
@@ -78,7 +95,7 @@ class ProjectScheduler:
             team_order = {2: 1, 1: 2, 3: 3, 4: 4}.get(assignment.team_id, 999)  # Arch → Devs → Model → Dqa
             return (priority, team_order, assignment.id)
         
-        sorted_assignments = sorted(assignments, key=sort_key)
+        sorted_assignments = sorted(active_assignments, key=sort_key)
         
         # Procesar cada asignación
         for assignment in sorted_assignments:
@@ -93,7 +110,7 @@ class ProjectScheduler:
                 assignment.pending_hours = 0
         
         # Generar resumen por proyecto
-        project_summaries = self._generate_project_summaries(sorted_assignments, projects, today)
+        project_summaries = self._generate_project_summaries(sorted_assignments, active_projects, today)
         
         # Crear resultado de la simulación
         result = ScheduleResult(

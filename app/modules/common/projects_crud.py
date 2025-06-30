@@ -1,6 +1,6 @@
 """
-CRUD básico para Project
-Sin validaciones, operaciones directas con DB
+CRUD básico para Project - Versión refactorizada
+Operaciones directas con DB optimizadas
 """
 
 import sqlalchemy as sa
@@ -16,10 +16,14 @@ def create_project(project: Project) -> int:
             projects_table.insert().values(
                 name=project.name,
                 priority=project.priority,
-                phase="",  # Campo requerido en DB, usar vacío por defecto
+                phase=project.phase,  # Mantenido para compatibilidad
                 start_date=project.start_date,
                 due_date_wo_qa=project.due_date_wo_qa,
-                due_date_with_qa=project.due_date_with_qa
+                due_date_with_qa=project.due_date_with_qa,
+                active=project.active,
+                horas_trabajadas=project.horas_trabajadas,
+                horas_totales_estimadas=project.horas_totales_estimadas,
+                fecha_inicio_real=project.fecha_inicio_real
             ).returning(projects_table.c.id)
         )
         return result.scalar()
@@ -33,9 +37,14 @@ def read_project(project_id: int) -> Optional[Project]:
                 projects_table.c.id,
                 projects_table.c.name,
                 projects_table.c.priority,
+                projects_table.c.phase,
                 projects_table.c.start_date,
                 projects_table.c.due_date_wo_qa,
-                projects_table.c.due_date_with_qa
+                projects_table.c.due_date_with_qa,
+                projects_table.c.active,
+                projects_table.c.horas_trabajadas,
+                projects_table.c.horas_totales_estimadas,
+                projects_table.c.fecha_inicio_real
             ).where(projects_table.c.id == project_id)
         ).first()
         
@@ -46,9 +55,14 @@ def read_project(project_id: int) -> Optional[Project]:
             id=result.id,
             name=result.name,
             priority=result.priority,
+            phase=result.phase or "draft",  # Mantenido para compatibilidad
             start_date=result.start_date,
             due_date_wo_qa=result.due_date_wo_qa,
-            due_date_with_qa=result.due_date_with_qa
+            due_date_with_qa=result.due_date_with_qa,
+            active=result.active if result.active is not None else True,
+            horas_trabajadas=result.horas_trabajadas or 0,
+            horas_totales_estimadas=result.horas_totales_estimadas or 0,
+            fecha_inicio_real=result.fecha_inicio_real
         )
 
 
@@ -60,9 +74,14 @@ def read_all_projects() -> Dict[int, Project]:
                 projects_table.c.id,
                 projects_table.c.name,
                 projects_table.c.priority,
+                projects_table.c.phase,
                 projects_table.c.start_date,
                 projects_table.c.due_date_wo_qa,
-                projects_table.c.due_date_with_qa
+                projects_table.c.due_date_with_qa,
+                projects_table.c.active,
+                projects_table.c.horas_trabajadas,
+                projects_table.c.horas_totales_estimadas,
+                projects_table.c.fecha_inicio_real
             ).order_by(projects_table.c.priority)
         ).fetchall()
         
@@ -72,9 +91,14 @@ def read_all_projects() -> Dict[int, Project]:
                 id=row.id,
                 name=row.name,
                 priority=row.priority,
+                phase=row.phase or "draft",  # Mantenido para compatibilidad
                 start_date=row.start_date,
                 due_date_wo_qa=row.due_date_wo_qa,
-                due_date_with_qa=row.due_date_with_qa
+                due_date_with_qa=row.due_date_with_qa,
+                active=row.active if row.active is not None else True,
+                horas_trabajadas=row.horas_trabajadas or 0,
+                horas_totales_estimadas=row.horas_totales_estimadas or 0,
+                fecha_inicio_real=row.fecha_inicio_real
             )
         
         return projects
@@ -89,9 +113,14 @@ def update_project(project: Project):
             .values(
                 name=project.name,
                 priority=project.priority,
+                phase=project.phase,
                 start_date=project.start_date,
                 due_date_wo_qa=project.due_date_wo_qa,
-                due_date_with_qa=project.due_date_with_qa
+                due_date_with_qa=project.due_date_with_qa,
+                active=project.active,
+                horas_trabajadas=project.horas_trabajadas,
+                horas_totales_estimadas=project.horas_totales_estimadas,
+                fecha_inicio_real=project.fecha_inicio_real
             )
         )
 

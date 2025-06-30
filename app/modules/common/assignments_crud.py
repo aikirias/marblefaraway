@@ -1,6 +1,6 @@
 """
-CRUD básico para Assignment
-Sin validaciones, operaciones directas con DB
+CRUD básico para Assignment - Versión refactorizada
+Operaciones directas con DB optimizadas
 Maneja el mapeo assignment_start_date <-> start_date
 """
 

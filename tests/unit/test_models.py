@@ -1,5 +1,6 @@
 """
 Unit tests para modelos del sistema APE
+Tests limpios y organizados para todos los modelos principales
 """
 
 import pytest

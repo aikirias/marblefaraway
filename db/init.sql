@@ -5,7 +5,11 @@ CREATE TABLE projects (
   phase TEXT NOT NULL,
   start_date DATE NOT NULL,
   due_date_wo_qa DATE NOT NULL,
-  due_date_with_qa DATE NOT NULL
+  due_date_with_qa DATE NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT true,
+  horas_trabajadas INTEGER NOT NULL DEFAULT 0,
+  horas_totales_estimadas INTEGER NOT NULL DEFAULT 0,
+  fecha_inicio_real DATE
 );
 
 -- Teams table: available capacity per area

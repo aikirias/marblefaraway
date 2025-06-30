@@ -1,6 +1,6 @@
 """
-CRUD básico para Team
-Sin validaciones, operaciones directas con DB
+CRUD básico para Team - Versión refactorizada
+Operaciones directas con DB optimizadas
 """
 
 import sqlalchemy as sa

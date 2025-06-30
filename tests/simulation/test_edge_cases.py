@@ -1,5 +1,6 @@
 """
-Tests de casos límite y manejo de errores en simulación
+Tests de casos límite y manejo de errores en simulación APE
+Tests limpios para casos edge y validación de robustez del scheduler
 """
 
 import pytest

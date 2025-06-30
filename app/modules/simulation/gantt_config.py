@@ -351,7 +351,6 @@ def add_timeline_markers(fig, gantt_df: pd.DataFrame, show_today: bool = True, s
                 )
     except Exception as e:
         # Si hay error con los marcadores, simplemente no los agregamos
-        print(f"Warning: No se pudieron agregar marcadores temporales: {e}")
         pass
 
 

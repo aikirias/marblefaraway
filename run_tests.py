@@ -34,6 +34,7 @@ def main():
     parser.add_argument("--unit", action="store_true", help="Ejecutar solo unit tests")
     parser.add_argument("--integration", action="store_true", help="Ejecutar solo integration tests")
     parser.add_argument("--simulation", action="store_true", help="Ejecutar solo simulation tests")
+    parser.add_argument("--gantt", action="store_true", help="Ejecutar solo gantt tests")
     parser.add_argument("--coverage", action="store_true", help="Ejecutar con reporte de cobertura")
     parser.add_argument("--verbose", "-v", action="store_true", help="Output verbose")
     parser.add_argument("--fast", action="store_true", help="Ejecutar tests rápidos solamente")
@@ -59,6 +60,10 @@ def main():
     elif args.simulation:
         cmd = base_cmd + ["tests/simulation/"]
         success &= run_command(cmd, "Simulation Tests")
+    
+    elif args.gantt:
+        cmd = base_cmd + ["tests/gantt/"]
+        success &= run_command(cmd, "Gantt Tests")
     
     elif args.coverage:
         cmd = base_cmd + [
@@ -92,6 +97,10 @@ def main():
         # Simulation tests
         cmd = base_cmd + ["tests/simulation/"]
         success &= run_command(cmd, "Simulation Tests")
+        
+        # Gantt tests
+        cmd = base_cmd + ["tests/gantt/"]
+        success &= run_command(cmd, "Gantt Tests")
     
     # Resumen final
     print(f"\n{'='*60}")

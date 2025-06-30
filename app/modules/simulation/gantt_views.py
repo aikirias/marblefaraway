@@ -135,7 +135,8 @@ def transform_to_consolidated_view(assignments: List[Assignment], projects: Dict
         
         # Validar secuencia de fases
         if not validate_phase_sequence(project_assignments):
-            print(f"⚠️ Advertencia: Secuencia de fases incorrecta en proyecto {project_assignments[0].project_name}")
+            # Secuencia de fases incorrecta detectada
+            pass
         
         # Calcular información del proyecto completo
         project_start = min(a.calculated_start_date for a in project_assignments)

@@ -435,10 +435,7 @@ class TestCaseBuilder:
                 assignments = self.create_assignments_from_projects(projects_data)
                 scheduler = ProjectScheduler()
                 
-                # DEBUG: Validar datos antes de la simulación
-                st.write(f"DEBUG: {len(assignments)} assignments creados")
-                st.write(f"DEBUG: {len(teams)} teams disponibles")
-                st.write(f"DEBUG: {len(projects_data)} projects en datos")
+                # Validar datos antes de la simulación
                 
                 # Crear SimulationInput correctamente
                 from ..common.models import SimulationInput, Project
@@ -471,7 +468,7 @@ class TestCaseBuilder:
                     simulation_start_date=today
                 )
                 
-                st.write(f"DEBUG: Fecha de inicio de simulación: {today}")
+                
                 result = scheduler.simulate(simulation_input)
                 
                 st.session_state.simulation_result = result

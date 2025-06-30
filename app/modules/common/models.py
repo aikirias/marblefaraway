@@ -1,6 +1,6 @@
 """
 Modelos de datos unificados para el sistema APE
-Movidos desde simulation/models.py para uso común en toda la aplicación
+Versión refactorizada con código limpio y métodos optimizados
 """
 
 from dataclasses import dataclass
@@ -15,7 +15,7 @@ class Team:
     name: str
     total_devs: int
     busy_devs: int = 0
-    tier_capacities: Dict[int, int] = None  # {tier: hours_per_person}
+    tier_capacities: Dict[int, int] = None
     
     def __post_init__(self):
         if self.tier_capacities is None:
@@ -32,13 +32,65 @@ class Team:
 
 @dataclass
 class Project:
-    """Proyecto con estructura real de la aplicación APE"""
+    """Proyecto con estructura simplificada APE"""
     id: int
     name: str
     priority: int
     start_date: date
     due_date_wo_qa: date
     due_date_with_qa: date
+    phase: str = "draft"
+    active: bool = True
+    horas_trabajadas: int = 0
+    horas_totales_estimadas: int = 0
+    fecha_inicio_real: Optional[date] = None
+    
+    # Campo calculado (NO va a DB)
+    total_hours_remaining: int = 0
+    
+    def is_active(self) -> bool:
+        """Verifica si el proyecto está activo"""
+        return self.active
+    
+    def get_state_display(self) -> str:
+        """Retorna estado legible para UI"""
+        return "🟢 Activo" if self.active else "⏸️ Inactivo"
+    
+    def get_state_color(self) -> str:
+        """Retorna color para UI según estado"""
+        return "#28a745" if self.active else "#6c757d"
+    
+    def get_horas_faltantes(self) -> int:
+        """Calcula las horas faltantes del proyecto"""
+        if self.horas_totales_estimadas <= 0:
+            return 0
+        return max(0, self.horas_totales_estimadas - self.horas_trabajadas)
+    
+    def get_progreso_porcentaje(self) -> float:
+        """Calcula el porcentaje de progreso del proyecto"""
+        if self.horas_totales_estimadas <= 0:
+            return 0.0
+        progreso = (self.horas_trabajadas / self.horas_totales_estimadas) * 100
+        return min(100.0, progreso)
+    
+    def get_progreso_display(self) -> str:
+        """Retorna texto de progreso para mostrar en UI"""
+        if self.horas_totales_estimadas <= 0:
+            return "Sin estimación"
+        porcentaje = self.get_progreso_porcentaje()
+        return f"{porcentaje:.1f}% ({self.horas_trabajadas}/{self.horas_totales_estimadas}h)"
+    
+    def get_progreso_color(self) -> str:
+        """Retorna color para barra de progreso según porcentaje"""
+        porcentaje = self.get_progreso_porcentaje()
+        if porcentaje >= 90:
+            return "#28a745"  # Verde - casi completo
+        elif porcentaje >= 70:
+            return "#ffc107"  # Amarillo - en progreso avanzado
+        elif porcentaje >= 30:
+            return "#17a2b8"  # Azul - en progreso
+        else:
+            return "#dc3545"  # Rojo - poco progreso
 
 
 @dataclass
@@ -54,11 +106,11 @@ class Assignment:
     devs_assigned: float
     max_devs: float
     estimated_hours: int
-    ready_to_start_date: date  # Constraint de fecha mínima
+    ready_to_start_date: date
     assignment_start_date: date
     status: str = "Not Started"
     
-    # Calculados por la simulación - NO van a DB
+    # Campos calculados por la simulación (NO van a DB)
     calculated_start_date: Optional[date] = None
     calculated_end_date: Optional[date] = None
     pending_hours: int = 0
@@ -68,7 +120,7 @@ class Assignment:
         """Calcula horas totales necesarias basado en tier y devs asignados"""
         hours_per_person = team.get_hours_per_person_for_tier(self.tier)
         if hours_per_person == 0:
-            return self.estimated_hours  # Fallback a horas estimadas manuales
+            return self.estimated_hours
         return int(hours_per_person * self.devs_assigned)
     
     def can_start_on(self, target_date: date) -> bool:
