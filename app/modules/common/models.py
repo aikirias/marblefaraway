@@ -109,6 +109,7 @@ class Assignment:
     ready_to_start_date: date
     assignment_start_date: date
     status: str = "Not Started"
+    custom_estimated_hours: Optional[int] = None
     
     # Campos calculados por la simulación (NO van a DB)
     calculated_start_date: Optional[date] = None
@@ -118,6 +119,11 @@ class Assignment:
     
     def get_hours_needed(self, team: Team) -> int:
         """Calcula horas totales necesarias basado en tier y devs asignados"""
+        # Si hay horas estimadas personalizadas, usarlas
+        if self.custom_estimated_hours is not None:
+            return int(self.custom_estimated_hours * self.devs_assigned)
+        
+        # Sino, usar el tier para calcular
         hours_per_person = team.get_hours_per_person_for_tier(self.tier)
         if hours_per_person == 0:
             return self.estimated_hours

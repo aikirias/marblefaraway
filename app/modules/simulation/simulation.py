@@ -8,6 +8,12 @@ import pandas as pd
 from datetime import date
 from .scheduler import ProjectScheduler
 from ..common.models import SimulationInput
+
+try:
+    from st_draggable_list import DraggableList
+    DRAGGABLE_AVAILABLE = True
+except ImportError:
+    DRAGGABLE_AVAILABLE = False
 from ..common.simulation_data_loader import load_simulation_input_from_db
 
 
@@ -83,25 +89,60 @@ def _validate_data(initial_data):
 
 
 def _render_priority_controls(initial_data):
-    """Renderiza controles de prioridad para proyectos"""
+    """Renderiza controles de prioridad para proyectos con lista draggable"""
     st.subheader("🎯 Control de Prioridades (Simulación)")
-    st.markdown("**Modifica las prioridades temporalmente para ver el impacto en el cronograma**")
+    st.markdown("**Arrastra los proyectos para cambiar su prioridad temporalmente y ver el impacto en el cronograma**")
     
     priority_overrides = {}
-    projects_list = sorted(initial_data.projects.values(), key=lambda p: p.priority)
     
-    cols = st.columns(min(3, len(projects_list)))
-    for i, project in enumerate(projects_list):
-        with cols[i % len(cols)]:
-            new_priority = st.number_input(
-                f"🏷️ {project.name}",
-                min_value=1,
-                max_value=10,
-                value=project.priority,
-                key=f"priority_{project.id}"
-            )
-            if new_priority != project.priority:
-                priority_overrides[project.id] = new_priority
+    # CORRECCIÓN: Aplicar prioridad efectiva - activos primero, luego pausados
+    def effective_priority(project):
+        if project.is_active():
+            return (0, project.priority)  # Activos primero
+        else:
+            return (1, project.priority)  # Pausados después
+    
+    projects_list = sorted(initial_data.projects.values(), key=effective_priority)
+    
+    if not DRAGGABLE_AVAILABLE:
+        st.info("🔄 Funcionalidad de drag-and-drop no disponible. Usando controles numéricos:")
+        cols = st.columns(min(3, len(projects_list)))
+        for i, project in enumerate(projects_list):
+            with cols[i % len(cols)]:
+                new_priority = st.number_input(
+                    f"🏷️ {project.name}",
+                    min_value=1,
+                    max_value=10,
+                    value=project.priority,
+                    key=f"priority_{project.id}"
+                )
+                if new_priority != project.priority:
+                    priority_overrides[project.id] = new_priority
+        return priority_overrides
+    
+    # Preparar items para la lista draggable
+    items = []
+    for project in projects_list:
+        state_symbol = "🟢" if project.is_active() else "⏸️"
+        state_text = "Activo" if project.is_active() else "Pausado"
+        items.append({
+            "id": project.id,
+            "name": f"({project.priority}) {project.name} - {state_symbol} {state_text}",
+            "original_priority": project.priority
+        })
+    
+    # Renderizar lista draggable
+    new_order = DraggableList(items, text_key="name", key="sim_priority_sort")
+    
+    # Calcular cambios de prioridad basados en el nuevo orden
+    for idx, item in enumerate(new_order, start=1):
+        original_priority = item["original_priority"]
+        if idx != original_priority:
+            priority_overrides[item["id"]] = idx
+    
+    # Mostrar información sobre cambios
+    if priority_overrides:
+        st.info(f"📝 Se detectaron {len(priority_overrides)} cambios de prioridad. La simulación se ejecutará automáticamente.")
     
     return priority_overrides
 

@@ -14,16 +14,17 @@ st.set_page_config(
 st.title("Automatic Project Estimator (APE)")
 
 # Tabs for Teams and Projects
-tab1, tab2, tab3, tab4 = st.tabs(["Teams", "Projects", "Monitoring", "Simulation"])
+tab1, tab2, tab3, tab4 = st.tabs(["Simulation","Teams", "Projects", "Monitoring"])
 
 with tab1:
-    render_teams()
+    render_simulation()
 
 with tab2:
-    render_projects()
+    render_teams()
 
 with tab3:
-    render_monitoring()
+    render_projects()
 
 with tab4:
-    render_simulation()
+    render_monitoring()
+

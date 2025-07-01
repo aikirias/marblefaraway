@@ -63,18 +63,24 @@ PHASE_ORDER = ["Arch", "Model", "Dev", "Dqa"]
 def render_monitoring():
     st.header("Delivery Forecast")
 
-    # 1) Load projects by priority
+    # 1) Load ALL projects (active and paused) with effective priority
     df_proj = pd.read_sql(
         sa.select(
             projects_table.c.id.label("project_id"),
             projects_table.c.name.label("project_name"),
-            projects_table.c.priority
-        ).order_by(projects_table.c.priority),
+            projects_table.c.priority,
+            projects_table.c.active
+        ).order_by(projects_table.c.active.desc(), projects_table.c.priority),  # Active first, then by priority
         engine
     )
     if df_proj.empty:
         st.info("No projects to monitor.")
         return
+
+    # Add drag and drop priority management
+    _render_priority_management(df_proj)
+    
+    st.markdown("---")
 
     # 2) Load teams capacity
     df_teams = pd.read_sql(
@@ -257,3 +263,42 @@ def render_monitoring():
         })
 
     st.table(pd.DataFrame(output))
+
+
+def _render_priority_management(df_proj):
+    """Renderiza interfaz de gestión de prioridades con drag and drop"""
+    from st_draggable_list import DraggableList
+    
+    st.subheader("🔄 Gestión de Prioridades")
+    
+    # Preparar items para drag and drop con prioridad efectiva
+    items = []
+    for _, row in df_proj.iterrows():
+        state_symbol = "🟢" if row.active else "⏸️"
+        state_text = "Activo" if row.active else "Pausado"
+        items.append({
+            "id": row.project_id,
+            "name": f"({row.priority}) {row.project_name} - {state_symbol} {state_text}"
+        })
+    
+    new_order = DraggableList(items, text_key="name", key="monitoring_priority_sort")
+    
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("💾 Guardar Nuevo Orden", key="save_monitoring_priorities"):
+            try:
+                # Actualizar prioridades en la base de datos
+                with engine.begin() as conn:
+                    for idx, item in enumerate(new_order, start=1):
+                        conn.execute(
+                            projects_table.update()
+                            .where(projects_table.c.id == item["id"])
+                            .values(priority=idx)
+                        )
+                st.success("✅ Prioridades actualizadas en Monitoring.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error actualizando prioridades: {e}")
+    
+    with col2:
+        st.info("💡 Arrastra los proyectos para cambiar su prioridad. Los activos siempre tienen prioridad sobre los pausados.")

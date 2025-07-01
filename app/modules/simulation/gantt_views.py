@@ -65,7 +65,7 @@ def validate_phase_sequence(project_assignments: List[Assignment]) -> bool:
     return True
 
 
-def transform_to_detailed_view(assignments: List[Assignment]) -> pd.DataFrame:
+def transform_to_detailed_view(assignments: List[Assignment], projects: Dict = None) -> pd.DataFrame:
     """
     Transforma assignments a formato de vista detallada
     
@@ -79,6 +79,21 @@ def transform_to_detailed_view(assignments: List[Assignment]) -> pd.DataFrame:
     
     for assignment in assignments:
         if assignment.calculated_start_date and assignment.calculated_end_date:
+            # Obtener la prioridad correcta y el estado del proyecto
+            correct_priority = assignment.project_priority  # Fallback
+            project_active = True  # Por defecto activo
+            
+            if projects:
+                for proj_id, proj_data in projects.items():
+                    if hasattr(proj_data, 'name') and proj_data.name == assignment.project_name:
+                        correct_priority = proj_data.priority
+                        project_active = proj_data.active if hasattr(proj_data, 'active') else True
+                        break
+                    elif isinstance(proj_data, dict) and proj_data.get('name') == assignment.project_name:
+                        correct_priority = proj_data.get('priority', assignment.project_priority)
+                        project_active = proj_data.get('active', True)
+                        break
+            
             gantt_data.append({
                 "Task": f"{assignment.project_name} - {assignment.team_name}",
                 "Start": pd.Timestamp(assignment.calculated_start_date),
@@ -86,7 +101,8 @@ def transform_to_detailed_view(assignments: List[Assignment]) -> pd.DataFrame:
                 "Project": assignment.project_name,
                 "Team": assignment.team_name,
                 "Phase": assignment.team_name,  # Para consistencia
-                "Priority": assignment.project_priority,
+                "Priority": correct_priority,  # Usar la prioridad correcta
+                "Active": project_active,  # Estado del proyecto
                 "Tier": assignment.tier,
                 "Devs": assignment.devs_assigned,
                 "Hours": assignment.estimated_hours,
@@ -99,8 +115,18 @@ def transform_to_detailed_view(assignments: List[Assignment]) -> pd.DataFrame:
     
     gantt_df = pd.DataFrame(gantt_data)
     
-    # Ordenar por prioridad y luego por orden correcto de fases
-    gantt_df = gantt_df.sort_values(['Priority', 'Project', 'PhaseOrder'])
+    # Aplicar lógica de prioridad efectiva: activos primero, luego pausados
+    # Crear columna de prioridad efectiva: (0, priority) para activos, (1, priority) para pausados
+    gantt_df['EffectivePriority'] = gantt_df.apply(
+        lambda row: (0, row['Priority']) if row['Active'] else (1, row['Priority']), 
+        axis=1
+    )
+    
+    # Ordenar por prioridad efectiva y luego por orden correcto de fases
+    gantt_df = gantt_df.sort_values(['EffectivePriority', 'Project', 'PhaseOrder'])
+    
+    # Eliminar la columna temporal
+    gantt_df = gantt_df.drop('EffectivePriority', axis=1)
     
     return gantt_df
 
@@ -164,15 +190,18 @@ def transform_to_consolidated_view(assignments: List[Assignment], projects: Dict
             total_hours += assignment.estimated_hours
             total_devs += assignment.devs_assigned
         
-        # Obtener la prioridad correcta del diccionario de proyectos
+        # Obtener la prioridad correcta y el estado del diccionario de proyectos
         # Esto corrige la inconsistencia entre assignment.project_priority y projects[].priority
         correct_priority = None
+        project_active = True  # Por defecto activo
         for proj_id, proj_data in projects.items():
             if hasattr(proj_data, 'name') and proj_data.name == project_name:
                 correct_priority = proj_data.priority
+                project_active = proj_data.active if hasattr(proj_data, 'active') else True
                 break
             elif isinstance(proj_data, dict) and proj_data.get('name') == project_name:
                 correct_priority = proj_data.get('priority')
+                project_active = proj_data.get('active', True)
                 break
         
         # Si no encontramos la prioridad correcta, usar la de assignment como fallback
@@ -185,6 +214,7 @@ def transform_to_consolidated_view(assignments: List[Assignment], projects: Dict
             "Finish": pd.Timestamp(project_end),
             "Project": project_name,
             "Priority": final_priority,  # Usar la prioridad correcta
+            "Active": project_active,  # Estado del proyecto (activo/pausado)
             "ProjectDuration": project_duration,
             "TotalPhases": len(project_assignments),
             "TotalHours": total_hours,
@@ -202,8 +232,18 @@ def transform_to_consolidated_view(assignments: List[Assignment], projects: Dict
     
     gantt_df = pd.DataFrame(gantt_data)
     
-    # Ordenar por prioridad
-    gantt_df = gantt_df.sort_values(['Priority', 'Project'])
+    # Aplicar lógica de prioridad efectiva: activos primero, luego pausados
+    # Crear columna de prioridad efectiva: (0, priority) para activos, (1, priority) para pausados
+    gantt_df['EffectivePriority'] = gantt_df.apply(
+        lambda row: (0, row['Priority']) if row['Active'] else (1, row['Priority']), 
+        axis=1
+    )
+    
+    # Ordenar por prioridad efectiva
+    gantt_df = gantt_df.sort_values(['EffectivePriority', 'Project'])
+    
+    # Eliminar la columna temporal
+    gantt_df = gantt_df.drop('EffectivePriority', axis=1)
     
     return gantt_df
 
@@ -221,7 +261,7 @@ def prepare_gantt_data(result: ScheduleResult, view_type: str, simulation_input:
         pd.DataFrame: Datos formateados para Plotly
     """
     if view_type == "detailed":
-        return transform_to_detailed_view(result.assignments)
+        return transform_to_detailed_view(result.assignments, simulation_input.projects)
     elif view_type == "consolidated":
         return transform_to_consolidated_view(result.assignments, simulation_input.projects)
     else:
