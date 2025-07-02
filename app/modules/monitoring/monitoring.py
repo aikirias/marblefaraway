@@ -13,23 +13,13 @@ from sqlalchemy import func
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Límites de fechas para evitar errores de rango
-MIN_DATE = date(1900, 1, 1)
-MAX_DATE = date(2100, 12, 31)
+# Importar utilidades comunes
+from ..common.constants import MIN_DATE, MAX_DATE, PHASE_ORDER
+from ..common.date_utils import validate_date_range, safe_business_day_calculation
+from ..common.ui_utils import setup_draggable_list
 
 
-def validate_date_range(target_date: date, context: str = "") -> date:
-    """Valida que una fecha esté en el rango válido de Python"""
-    if target_date < MIN_DATE:
-        logger.warning(f"Fecha {target_date} fuera de rango mínimo en {context}. Ajustando a {MIN_DATE}")
-        return MIN_DATE
-    if target_date > MAX_DATE:
-        logger.error(f"Fecha {target_date} fuera de rango máximo en {context}. Ajustando a {MAX_DATE}")
-        return MAX_DATE
-    return target_date
-
-
-def safe_business_day_calculation(base_date: date, days_offset: int, context: str = "") -> date:
+def safe_business_day_calculation_legacy(base_date: date, days_offset: int, context: str = "") -> date:
     """Calcula días hábiles de manera segura, evitando fechas fuera de rango"""
     try:
         # Validar fecha base
@@ -58,7 +48,7 @@ from ..common.db import (
     tier_capacity_table
 )
 
-PHASE_ORDER = ["Arch", "Model", "Dev", "Dqa"]
+
 
 def render_monitoring():
     st.header("Delivery Forecast")
@@ -267,8 +257,6 @@ def render_monitoring():
 
 def _render_priority_management(df_proj):
     """Renderiza interfaz de gestión de prioridades con drag and drop"""
-    from st_draggable_list import DraggableList
-    
     st.subheader("🔄 Gestión de Prioridades")
     
     # Preparar items para drag and drop con prioridad efectiva
@@ -281,7 +269,11 @@ def _render_priority_management(df_proj):
             "name": f"({row.priority}) {row.project_name} - {state_symbol} {state_text}"
         })
     
-    new_order = DraggableList(items, text_key="name", key="monitoring_priority_sort")
+    new_order = setup_draggable_list(items, text_key="name", key="monitoring_priority_sort")
+    
+    # Manejar caso donde setup_draggable_list devuelve None
+    if new_order is None:
+        new_order = items
     
     col1, col2 = st.columns([1, 3])
     with col1:

@@ -16,9 +16,9 @@ from ..common.models import Assignment, Team, Project, ScheduleResult, Simulatio
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Límites de fechas para evitar errores de rango
-MIN_DATE = date(1900, 1, 1)
-MAX_DATE = date(2100, 12, 31)
+# Importar utilidades comunes
+from ..common.constants import MIN_DATE, MAX_DATE
+from ..common.date_utils import validate_date_range, add_business_days, safe_business_day_calculation
 
 
 class EnhancedJSONEncoder(json.JSONEncoder):
@@ -29,17 +29,6 @@ class EnhancedJSONEncoder(json.JSONEncoder):
         if hasattr(obj, '__dict__'):
             return obj.__dict__
         return super().default(obj)
-
-
-def validate_date_range(target_date: date, context: str = "") -> date:
-    """Valida que una fecha esté en el rango válido de Python"""
-    if target_date < MIN_DATE:
-        logger.warning(f"Fecha {target_date} fuera de rango mínimo en {context}. Ajustando a {MIN_DATE}")
-        return MIN_DATE
-    if target_date > MAX_DATE:
-        logger.error(f"Fecha {target_date} fuera de rango máximo en {context}. Ajustando a {MAX_DATE}")
-        return MAX_DATE
-    return target_date
 
 
 class ProjectScheduler:
@@ -101,7 +90,7 @@ class ProjectScheduler:
         for assignment in sorted_assignments:
             try:
                 self._process_assignment(assignment, teams, active_by_team, 
-                                       project_next_free, today)
+                                       project_next_free, today, all_projects)
             except Exception as e:
                 logger.error(f"Error procesando asignación {assignment.id}: {e}")
                 # Asignar fechas por defecto para evitar que falle toda la simulación
@@ -130,7 +119,7 @@ class ProjectScheduler:
         return result
     
     def _process_assignment(self, assignment: Assignment, teams: Dict[int, Team],
-                          active_by_team: Dict, project_next_free: Dict, today: date):
+                          active_by_team: Dict, project_next_free: Dict, today: date, projects: Dict[int, Project] = None):
         """Procesa una asignación individual"""
         
         team = teams[assignment.team_id]
@@ -147,6 +136,35 @@ class ProjectScheduler:
         
         # Fecha mínima de inicio (constraint de ready_to_start_date)
         ready = max(validate_date_range(assignment.ready_to_start_date, f"ready_to_start_date assignment {assignment.id}"), today)
+        
+        # CORRECCIÓN ROBUSTA: Usar fecha_inicio_real del proyecto si está disponible
+        # Verificar si es la primera asignación del proyecto (no está en project_next_free)
+        # O si es la asignación de Arch (que siempre debe respetar fecha_inicio_real)
+        if projects and assignment.project_id in projects:
+            project = projects[assignment.project_id]
+            if project.fecha_inicio_real:
+                fecha_inicio_real = validate_date_range(project.fecha_inicio_real, f"fecha_inicio_real project {assignment.project_id}")
+                
+                # Verificar si es la primera asignación o si es Arch (team_id=2)
+                is_first_assignment = assignment.project_id not in project_next_free
+                is_arch_team = assignment.team_id == 2  # Arch tiene team_id=2
+                
+                if is_first_assignment or is_arch_team:
+                    # Siempre usar fecha_inicio_real para la primera asignación o para Arch
+                    logger.info(f"🔍 DEBUG FECHA_INICIO_REAL: Usando fecha_inicio_real {fecha_inicio_real} para proyecto {project.name} (ID: {project.id})")
+                    logger.info(f"🔍 DETALLES: Es primera asignación: {is_first_assignment}, Es equipo Arch: {is_arch_team}")
+                    logger.info(f"🔍 FECHAS: ready antes={ready}, fecha_inicio_real={fecha_inicio_real}")
+                    
+                    # CORRECCIÓN CRÍTICA: Para Arch, la fecha de inicio DEBE SER EXACTAMENTE fecha_inicio_real
+                    # No usar max() que podría dar una fecha posterior
+                    if is_arch_team:
+                        ready = fecha_inicio_real
+                        logger.info(f"🔍 FORZANDO FECHA EXACTA para Arch: {fecha_inicio_real}")
+                    else:
+                        # Para otras asignaciones, asegurar que la fecha de inicio sea al menos la fecha_inicio_real
+                        ready = max(ready, fecha_inicio_real)
+                    
+                    logger.info(f"🔍 RESULTADO: ready después={ready}")
         
         # Respetar dependencias del proyecto (asignaciones anteriores)
         if assignment.project_id in project_next_free:

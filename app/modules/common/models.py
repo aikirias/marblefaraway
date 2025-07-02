@@ -3,9 +3,12 @@ Modelos de datos unificados para el sistema APE
 Versión refactorizada con código limpio y métodos optimizados
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .assignments_crud import Assignment
 
 
 @dataclass
@@ -39,14 +42,11 @@ class Project:
     start_date: date
     due_date_wo_qa: date
     due_date_with_qa: date
-    phase: str = "draft"
     active: bool = True
-    horas_trabajadas: int = 0
-    horas_totales_estimadas: int = 0
     fecha_inicio_real: Optional[date] = None
     
-    # Campo calculado (NO va a DB)
-    total_hours_remaining: int = 0
+    # Campos calculados dinámicamente (NO van a DB)
+    _assignments: List['Assignment'] = field(default_factory=list)
     
     def is_active(self) -> bool:
         """Verifica si el proyecto está activo"""
@@ -60,25 +60,46 @@ class Project:
         """Retorna color para UI según estado"""
         return "#28a745" if self.active else "#6c757d"
     
+    def get_horas_totales_estimadas(self) -> int:
+        """Calcula horas totales estimadas desde assignments"""
+        if not self._assignments:
+            return 0
+        return sum(a.estimated_hours for a in self._assignments)
+    
+    def get_horas_trabajadas(self) -> int:
+        """Calcula horas trabajadas desde assignments (simulado)"""
+        # Por ahora retornamos 0, se puede implementar lógica de tracking real
+        return 0
+    
     def get_horas_faltantes(self) -> int:
         """Calcula las horas faltantes del proyecto"""
-        if self.horas_totales_estimadas <= 0:
+        total = self.get_horas_totales_estimadas()
+        trabajadas = self.get_horas_trabajadas()
+        if total <= 0:
             return 0
-        return max(0, self.horas_totales_estimadas - self.horas_trabajadas)
+        return max(0, total - trabajadas)
     
     def get_progreso_porcentaje(self) -> float:
         """Calcula el porcentaje de progreso del proyecto"""
-        if self.horas_totales_estimadas <= 0:
+        total = self.get_horas_totales_estimadas()
+        trabajadas = self.get_horas_trabajadas()
+        if total <= 0:
             return 0.0
-        progreso = (self.horas_trabajadas / self.horas_totales_estimadas) * 100
+        progreso = (trabajadas / total) * 100
         return min(100.0, progreso)
     
     def get_progreso_display(self) -> str:
         """Retorna texto de progreso para mostrar en UI"""
-        if self.horas_totales_estimadas <= 0:
+        total = self.get_horas_totales_estimadas()
+        trabajadas = self.get_horas_trabajadas()
+        if total <= 0:
             return "Sin estimación"
         porcentaje = self.get_progreso_porcentaje()
-        return f"{porcentaje:.1f}% ({self.horas_trabajadas}/{self.horas_totales_estimadas}h)"
+        return f"{porcentaje:.1f}% ({trabajadas}/{total}h)"
+    
+    def set_assignments(self, assignments: List['Assignment']):
+        """Establece los assignments para cálculos dinámicos"""
+        self._assignments = assignments
     
     def get_progreso_color(self) -> str:
         """Retorna color para barra de progreso según porcentaje"""
@@ -115,13 +136,13 @@ class Assignment:
     calculated_start_date: Optional[date] = None
     calculated_end_date: Optional[date] = None
     pending_hours: int = 0
-    paused_on: Optional[date] = None
     
     def get_hours_needed(self, team: Team) -> int:
         """Calcula horas totales necesarias basado en tier y devs asignados"""
-        # Si hay horas estimadas personalizadas, usarlas
+        # Si hay horas estimadas personalizadas, usarlas directamente
+        # custom_estimated_hours ya representa el total de horas para esta fase
         if self.custom_estimated_hours is not None:
-            return int(self.custom_estimated_hours * self.devs_assigned)
+            return int(self.custom_estimated_hours)
         
         # Sino, usar el tier para calcular
         hours_per_person = team.get_hours_per_person_for_tier(self.tier)

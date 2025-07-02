@@ -23,7 +23,6 @@ def create_assignment(assignment: Assignment) -> int:
                 estimated_hours=assignment.estimated_hours,
                 start_date=assignment.assignment_start_date,  # Mapeo: assignment_start_date -> start_date
                 ready_to_start_date=assignment.ready_to_start_date,
-                paused_on=assignment.paused_on,
                 pending_hours=assignment.pending_hours,
                 status=assignment.status,
                 custom_estimated_hours=assignment.custom_estimated_hours
@@ -51,7 +50,6 @@ def read_assignment(assignment_id: int) -> Optional[Assignment]:
                 project_team_assignments_table.c.start_date.label("assignment_start_date"),  # Mapeo: start_date -> assignment_start_date
                 project_team_assignments_table.c.status,
                 project_team_assignments_table.c.pending_hours,
-                project_team_assignments_table.c.paused_on,
                 project_team_assignments_table.c.custom_estimated_hours
             )
             .select_from(
@@ -80,7 +78,6 @@ def read_assignment(assignment_id: int) -> Optional[Assignment]:
             assignment_start_date=result.assignment_start_date,
             status=result.status,
             pending_hours=result.pending_hours or 0,
-            paused_on=result.paused_on,
             custom_estimated_hours=result.custom_estimated_hours
         )
 
@@ -104,7 +101,6 @@ def read_assignments_by_project(project_id: int) -> List[Assignment]:
                 project_team_assignments_table.c.start_date.label("assignment_start_date"),
                 project_team_assignments_table.c.status,
                 project_team_assignments_table.c.pending_hours,
-                project_team_assignments_table.c.paused_on,
                 project_team_assignments_table.c.custom_estimated_hours
             )
             .select_from(
@@ -133,7 +129,6 @@ def read_assignments_by_project(project_id: int) -> List[Assignment]:
                 assignment_start_date=row.assignment_start_date,
                 status=row.status,
                 pending_hours=row.pending_hours or 0,
-                paused_on=row.paused_on,
                 custom_estimated_hours=row.custom_estimated_hours
             ))
         
@@ -159,7 +154,6 @@ def read_all_assignments() -> List[Assignment]:
                 project_team_assignments_table.c.start_date.label("assignment_start_date"),
                 project_team_assignments_table.c.status,
                 project_team_assignments_table.c.pending_hours,
-                project_team_assignments_table.c.paused_on,
                 project_team_assignments_table.c.custom_estimated_hours
             )
             .select_from(
@@ -187,7 +181,6 @@ def read_all_assignments() -> List[Assignment]:
                 assignment_start_date=row.assignment_start_date,
                 status=row.status,
                 pending_hours=row.pending_hours or 0,
-                paused_on=row.paused_on,
                 custom_estimated_hours=row.custom_estimated_hours
             ))
         
@@ -209,7 +202,6 @@ def update_assignment(assignment: Assignment):
                 estimated_hours=assignment.estimated_hours,
                 start_date=assignment.assignment_start_date,  # Mapeo: assignment_start_date -> start_date
                 ready_to_start_date=assignment.ready_to_start_date,
-                paused_on=assignment.paused_on,
                 pending_hours=assignment.pending_hours,
                 status=assignment.status,
                 custom_estimated_hours=assignment.custom_estimated_hours

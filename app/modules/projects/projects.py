@@ -5,11 +5,9 @@ Combina funcionalidad de projects.py y projects_simple.py eliminando duplicació
 
 import streamlit as st
 from datetime import date
-try:
-    from st_draggable_list import DraggableList
-    DRAGGABLE_AVAILABLE = True
-except ImportError:
-    DRAGGABLE_AVAILABLE = False
+# Importar utilidades comunes
+from ..common.ui_utils import DRAGGABLE_AVAILABLE, setup_draggable_list
+from ..common.priority_utils import get_effective_priority, sort_by_effective_priority
 from modules.common.models import Project, Assignment
 from modules.common.projects_crud import (
     create_project, read_all_projects, update_project, delete_project_by_name
@@ -58,13 +56,7 @@ def render_projects_dashboard():
         
         # Mostrar lista simple de proyectos ordenados por prioridad efectiva
         all_projects = list(projects.values())
-        def effective_priority(project):
-            if project.is_active():
-                return (0, project.priority)  # Activos primero
-            else:
-                return (1, project.priority)  # Pausados después
-        
-        sorted_projects = sorted(all_projects, key=effective_priority)
+        sorted_projects = sort_by_effective_priority(all_projects)
         
         st.write("📋 Orden actual de proyectos:")
         for i, p in enumerate(sorted_projects, 1):
@@ -133,8 +125,8 @@ def _render_project_metrics(projects):
     """Renderiza métricas de proyectos"""
     active_count = sum(1 for p in projects.values() if p.is_active())
     inactive_count = len(projects) - active_count
-    total_hours_worked = sum(p.horas_trabajadas for p in projects.values())
-    total_hours_estimated = sum(p.horas_totales_estimadas for p in projects.values())
+    total_hours_worked = sum(p.get_horas_trabajadas() for p in projects.values())
+    total_hours_estimated = sum(p.get_horas_totales_estimadas() for p in projects.values())
     total_hours_remaining = sum(p.get_horas_faltantes() for p in projects.values())
     
     col1, col2, col3, col4 = st.columns(4)
@@ -216,13 +208,13 @@ def _render_simple_project_card(project):
             st.markdown(f"**{project.name}** (Prioridad: {project.priority})")
             st.markdown(f"📅 {project.start_date} → {project.due_date_with_qa}")
             
-            if project.horas_totales_estimadas > 0:
+            if project.get_horas_totales_estimadas() > 0:
                 st.markdown(f"⏱️ Progreso: {project.get_progreso_display()}")
                 st.markdown(f"🔄 Horas faltantes: {project.get_horas_faltantes()}")
                 progress_pct = project.get_progreso_porcentaje() / 100
                 st.progress(progress_pct)
-            elif project.horas_trabajadas > 0:
-                st.markdown(f"⏱️ Horas trabajadas: {project.horas_trabajadas}")
+            elif project.get_horas_trabajadas() > 0:
+                st.markdown(f"⏱️ Horas trabajadas: {project.get_horas_trabajadas()}")
             
             if project.fecha_inicio_real:
                 st.markdown(f"🚀 Inicio real: {project.fecha_inicio_real}")
@@ -253,16 +245,17 @@ def _render_editable_project_card(project):
             new_hours = st.number_input(
                 "Horas Trabajadas",
                 min_value=0,
-                value=project.horas_trabajadas,
-                key=f"hours_{project.id}"
+                value=project.get_horas_trabajadas(),
+                key=f"hours_{project.id}",
+                help="Este valor se calcula automáticamente desde assignments"
             )
             
             new_total_hours = st.number_input(
                 "Horas Totales Estimadas",
                 min_value=0,
-                value=project.horas_totales_estimadas,
+                value=project.get_horas_totales_estimadas(),
                 key=f"total_hours_{project.id}",
-                help="Estimación total de horas para completar el proyecto"
+                help="Este valor se calcula automáticamente desde assignments"
             )
         
         with col2:
@@ -437,7 +430,11 @@ def _render_priority_reordering(projects):
             "name": f"({p.priority}) {p.name} - {state_symbol} {state_text}"
         })
     
-    new_order = DraggableList(items, text_key="name", key="proj_sort")
+    new_order = setup_draggable_list(items, text_key="name", key="proj_sort")
+    
+    # Manejar caso donde setup_draggable_list devuelve None
+    if new_order is None:
+        new_order = items
     
     if st.button("💾 Guardar Nuevo Orden"):
         try:
@@ -560,9 +557,8 @@ def _save_project_changes(project, new_active, new_hours, new_total_hours, new_s
     try:
         # Actualizar proyecto
         project.active = new_active
-        project.horas_trabajadas = new_hours
-        project.horas_totales_estimadas = new_total_hours
         project.fecha_inicio_real = new_start_real
+        # Nota: horas_trabajadas y horas_totales_estimadas ahora se calculan dinámicamente
         
         if new_active and project.fecha_inicio_real is None:
             project.fecha_inicio_real = date.today()
@@ -621,10 +617,7 @@ def _create_new_project(pname, start, due_with_qa,
             start_date=start,
             due_date_wo_qa=start,  # Usar start_date como valor por defecto
             due_date_with_qa=due_with_qa,
-            phase="draft",
             active=initial_active,
-            horas_trabajadas=0,
-            horas_totales_estimadas=initial_total_hours,
             fecha_inicio_real=date.today() if initial_active else None
         )
         
@@ -673,7 +666,6 @@ def _create_default_assignments(proj_id, pname, priority, start, tier_config=Non
                 assignment_start_date=start,
                 status="Not Started",
                 pending_hours=0,
-                paused_on=None,
                 custom_estimated_hours=None
             )
             create_assignment(assignment)

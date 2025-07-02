@@ -75,6 +75,17 @@ def transform_to_detailed_view(assignments: List[Assignment], projects: Dict = N
     Returns:
         pd.DataFrame: Datos formateados para vista detallada
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Agregar logs para verificar fechas calculadas
+    logger.info("🔍 DEBUG FECHAS CALCULADAS EN ASSIGNMENTS (VISTA DETALLADA):")
+    for assignment in assignments:
+        if assignment.team_name == "Arch":  # Solo mostrar logs para Arch
+            logger.info(f"  - Proyecto {assignment.project_name} (ID: {assignment.project_id}), Equipo {assignment.team_name}:")
+            logger.info(f"    * calculated_start_date = {assignment.calculated_start_date}")
+            logger.info(f"    * calculated_end_date = {assignment.calculated_end_date}")
+    
     gantt_data = []
     
     for assignment in assignments:
@@ -115,12 +126,11 @@ def transform_to_detailed_view(assignments: List[Assignment], projects: Dict = N
     
     gantt_df = pd.DataFrame(gantt_data)
     
+    # Importar utilidades comunes para prioridad efectiva
+    from ..common.priority_utils import get_effective_priority_for_dataframe
+    
     # Aplicar lógica de prioridad efectiva: activos primero, luego pausados
-    # Crear columna de prioridad efectiva: (0, priority) para activos, (1, priority) para pausados
-    gantt_df['EffectivePriority'] = gantt_df.apply(
-        lambda row: (0, row['Priority']) if row['Active'] else (1, row['Priority']), 
-        axis=1
-    )
+    gantt_df['EffectivePriority'] = gantt_df.apply(get_effective_priority_for_dataframe, axis=1)
     
     # Ordenar por prioridad efectiva y luego por orden correcto de fases
     gantt_df = gantt_df.sort_values(['EffectivePriority', 'Project', 'PhaseOrder'])
@@ -143,6 +153,16 @@ def transform_to_consolidated_view(assignments: List[Assignment], projects: Dict
     Returns:
         pd.DataFrame: Datos formateados para vista consolidada
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Agregar logs para verificar fechas de inicio real en proyectos
+    logger.info("🔍 DEBUG FECHAS EN VISTA CONSOLIDADA:")
+    for project_id, project in projects.items():
+        if hasattr(project, 'fecha_inicio_real') and project.fecha_inicio_real:
+            logger.info(f"  - Proyecto {project.name} (ID: {project_id}):")
+            logger.info(f"    * fecha_inicio_real = {project.fecha_inicio_real}")
+    
     gantt_data = []
     
     # Agrupar asignaciones por proyecto
@@ -232,12 +252,11 @@ def transform_to_consolidated_view(assignments: List[Assignment], projects: Dict
     
     gantt_df = pd.DataFrame(gantt_data)
     
+    # Importar utilidades comunes para prioridad efectiva
+    from ..common.priority_utils import get_effective_priority_for_dataframe
+    
     # Aplicar lógica de prioridad efectiva: activos primero, luego pausados
-    # Crear columna de prioridad efectiva: (0, priority) para activos, (1, priority) para pausados
-    gantt_df['EffectivePriority'] = gantt_df.apply(
-        lambda row: (0, row['Priority']) if row['Active'] else (1, row['Priority']), 
-        axis=1
-    )
+    gantt_df['EffectivePriority'] = gantt_df.apply(get_effective_priority_for_dataframe, axis=1)
     
     # Ordenar por prioridad efectiva
     gantt_df = gantt_df.sort_values(['EffectivePriority', 'Project'])
@@ -260,6 +279,27 @@ def prepare_gantt_data(result: ScheduleResult, view_type: str, simulation_input:
     Returns:
         pd.DataFrame: Datos formateados para Plotly
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Verificar fechas de inicio real en proyectos antes de transformar
+    logger.info("🔍 DEBUG FECHAS ANTES DE TRANSFORMAR PARA GANTT:")
+    for project_id, project in simulation_input.projects.items():
+        if hasattr(project, 'fecha_inicio_real') and project.fecha_inicio_real:
+            # Buscar la asignación de Arch para este proyecto
+            arch_assignments = [a for a in result.assignments 
+                               if a.project_id == project_id and a.team_name == "Arch"]
+            
+            if arch_assignments:
+                arch_assignment = arch_assignments[0]
+                logger.info(f"  - Proyecto {project.name} (ID: {project_id}):")
+                logger.info(f"    * fecha_inicio_real = {project.fecha_inicio_real}")
+                logger.info(f"    * Arch calculated_start_date = {arch_assignment.calculated_start_date}")
+                
+                # Verificar si hay discrepancia
+                if arch_assignment.calculated_start_date != project.fecha_inicio_real:
+                    logger.warning(f"⚠️ DISCREPANCIA DETECTADA: La fecha calculada para Arch ({arch_assignment.calculated_start_date}) no coincide con fecha_inicio_real ({project.fecha_inicio_real})")
+    
     if view_type == "detailed":
         return transform_to_detailed_view(result.assignments, simulation_input.projects)
     elif view_type == "consolidated":

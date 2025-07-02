@@ -16,13 +16,10 @@ def create_project(project: Project) -> int:
             projects_table.insert().values(
                 name=project.name,
                 priority=project.priority,
-                phase=project.phase,  # Mantenido para compatibilidad
                 start_date=project.start_date,
                 due_date_wo_qa=project.due_date_wo_qa,
                 due_date_with_qa=project.due_date_with_qa,
                 active=project.active,
-                horas_trabajadas=project.horas_trabajadas,
-                horas_totales_estimadas=project.horas_totales_estimadas,
                 fecha_inicio_real=project.fecha_inicio_real
             ).returning(projects_table.c.id)
         )
@@ -37,13 +34,10 @@ def read_project(project_id: int) -> Optional[Project]:
                 projects_table.c.id,
                 projects_table.c.name,
                 projects_table.c.priority,
-                projects_table.c.phase,
                 projects_table.c.start_date,
                 projects_table.c.due_date_wo_qa,
                 projects_table.c.due_date_with_qa,
                 projects_table.c.active,
-                projects_table.c.horas_trabajadas,
-                projects_table.c.horas_totales_estimadas,
                 projects_table.c.fecha_inicio_real
             ).where(projects_table.c.id == project_id)
         ).first()
@@ -55,53 +49,86 @@ def read_project(project_id: int) -> Optional[Project]:
             id=result.id,
             name=result.name,
             priority=result.priority,
-            phase=result.phase or "draft",  # Mantenido para compatibilidad
             start_date=result.start_date,
             due_date_wo_qa=result.due_date_wo_qa,
             due_date_with_qa=result.due_date_with_qa,
             active=result.active if result.active is not None else True,
-            horas_trabajadas=result.horas_trabajadas or 0,
-            horas_totales_estimadas=result.horas_totales_estimadas or 0,
             fecha_inicio_real=result.fecha_inicio_real
         )
 
 
 def read_all_projects() -> Dict[int, Project]:
-    """Leer todos los projects desde DB"""
+    """Leer todos los projects desde DB con assignments para cálculos dinámicos"""
     with engine.begin() as conn:
         results = conn.execute(
             sa.select(
                 projects_table.c.id,
                 projects_table.c.name,
                 projects_table.c.priority,
-                projects_table.c.phase,
                 projects_table.c.start_date,
                 projects_table.c.due_date_wo_qa,
                 projects_table.c.due_date_with_qa,
                 projects_table.c.active,
-                projects_table.c.horas_trabajadas,
-                projects_table.c.horas_totales_estimadas,
                 projects_table.c.fecha_inicio_real
             ).order_by(projects_table.c.priority)
         ).fetchall()
         
         projects = {}
         for row in results:
-            projects[row.id] = Project(
+            project = Project(
                 id=row.id,
                 name=row.name,
                 priority=row.priority,
-                phase=row.phase or "draft",  # Mantenido para compatibilidad
                 start_date=row.start_date,
                 due_date_wo_qa=row.due_date_wo_qa,
                 due_date_with_qa=row.due_date_with_qa,
                 active=row.active if row.active is not None else True,
-                horas_trabajadas=row.horas_trabajadas or 0,
-                horas_totales_estimadas=row.horas_totales_estimadas or 0,
                 fecha_inicio_real=row.fecha_inicio_real
             )
+            
+            # Cargar assignments para cálculos dinámicos
+            _load_project_assignments(project, conn)
+            projects[row.id] = project
         
         return projects
+
+
+def _load_project_assignments(project: Project, conn):
+    """Carga los assignments de un proyecto para cálculos dinámicos"""
+    from .db import project_team_assignments_table
+    
+    assignment_results = conn.execute(
+        sa.select(
+            project_team_assignments_table.c.estimated_hours,
+            project_team_assignments_table.c.custom_estimated_hours,
+            project_team_assignments_table.c.devs_assigned
+        ).where(project_team_assignments_table.c.project_id == project.id)
+    ).fetchall()
+    
+    # Crear objetos Assignment simplificados para cálculos
+    from .models import Assignment
+    assignments = []
+    for row in assignment_results:
+        # Usar custom_estimated_hours si está disponible, sino estimated_hours
+        effective_hours = row.custom_estimated_hours if row.custom_estimated_hours else row.estimated_hours
+        
+        assignment = Assignment(
+            id=0,  # No necesario para cálculos
+            project_id=project.id,
+            project_name=project.name,
+            project_priority=project.priority,
+            team_id=0,  # No necesario para cálculos
+            team_name="",
+            tier=1,
+            devs_assigned=row.devs_assigned,
+            max_devs=row.devs_assigned,
+            estimated_hours=effective_hours,
+            ready_to_start_date=project.start_date,
+            assignment_start_date=project.start_date
+        )
+        assignments.append(assignment)
+    
+    project.set_assignments(assignments)
 
 
 def update_project(project: Project):
@@ -113,13 +140,10 @@ def update_project(project: Project):
             .values(
                 name=project.name,
                 priority=project.priority,
-                phase=project.phase,
                 start_date=project.start_date,
                 due_date_wo_qa=project.due_date_wo_qa,
                 due_date_with_qa=project.due_date_with_qa,
                 active=project.active,
-                horas_trabajadas=project.horas_trabajadas,
-                horas_totales_estimadas=project.horas_totales_estimadas,
                 fecha_inicio_real=project.fecha_inicio_real
             )
         )

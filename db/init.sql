@@ -1,14 +1,14 @@
+-- Esquema de base de datos APE - Versión limpia post-migración
+-- Eliminadas columnas redundantes: horas_trabajadas, horas_totales_estimadas, phase, paused_on
+
 CREATE TABLE projects (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   priority INTEGER NOT NULL,
-  phase TEXT NOT NULL,
   start_date DATE NOT NULL,
   due_date_wo_qa DATE NOT NULL,
   due_date_with_qa DATE NOT NULL,
   active BOOLEAN NOT NULL DEFAULT true,
-  horas_trabajadas INTEGER NOT NULL DEFAULT 0,
-  horas_totales_estimadas INTEGER NOT NULL DEFAULT 0,
   fecha_inicio_real DATE
 );
 
@@ -20,7 +20,6 @@ CREATE TABLE teams (
   busy_devs INTEGER NOT NULL DEFAULT 0
 );
 
--- Assignments: links projects and teams with allocation details
 -- Assignments: links projects and teams with allocation details
 CREATE TABLE project_team_assignments (
   id SERIAL PRIMARY KEY,
@@ -34,11 +33,10 @@ CREATE TABLE project_team_assignments (
   estimated_hours INTEGER NOT NULL,
   start_date DATE,
   ready_to_start_date DATE,
-  paused_on DATE,
   pending_hours INTEGER,
-  status TEXT NOT NULL
+  status TEXT NOT NULL,
+  custom_estimated_hours INTEGER DEFAULT NULL
 );
-
 
 -- Tier-based capacity: defines hours per tier per team
 CREATE TABLE tier_capacity (

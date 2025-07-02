@@ -8,12 +8,13 @@ import pandas as pd
 from datetime import date
 from .scheduler import ProjectScheduler
 from ..common.models import SimulationInput
+import logging
 
-try:
-    from st_draggable_list import DraggableList
-    DRAGGABLE_AVAILABLE = True
-except ImportError:
-    DRAGGABLE_AVAILABLE = False
+# Configurar logging
+logger = logging.getLogger(__name__)
+
+# Importar utilidades comunes
+from ..common.ui_utils import DRAGGABLE_AVAILABLE, setup_draggable_list
 from ..common.simulation_data_loader import load_simulation_input_from_db
 
 
@@ -27,12 +28,23 @@ def render_simulation():
 
 def render_real_data_simulation():
     """Renderiza simulación con datos reales de la DB con controles de prioridad"""
+    # DEBUG: Log inicio de función
+    logger.info("=== INICIANDO render_real_data_simulation ===")
+    
     initial_data = _load_initial_data()
     if not initial_data:
+        logger.error("❌ FALLO: _load_initial_data() retornó None - NO SE RENDERIZARÁN CONTROLES")
+        st.error("🔍 DEBUG: Fallo en carga de datos iniciales - controles no disponibles")
         return
     
+    logger.info("✅ ÉXITO: _load_initial_data() completado")
+    
     if not _validate_data(initial_data):
+        logger.error("❌ FALLO: _validate_data() retornó False - NO SE RENDERIZARÁN CONTROLES")
+        st.error("🔍 DEBUG: Fallo en validación de datos - controles no disponibles")
         return
+    
+    logger.info("✅ ÉXITO: _validate_data() completado - RENDERIZANDO CONTROLES")
     
     # Control de prioridades y configuración
     priority_overrides = _render_priority_controls(initial_data)
@@ -132,7 +144,15 @@ def _render_priority_controls(initial_data):
         })
     
     # Renderizar lista draggable
-    new_order = DraggableList(items, text_key="name", key="sim_priority_sort")
+    new_order = setup_draggable_list(items, text_key="name", key="sim_priority_sort")
+    
+    # DEBUG: Validar que new_order no sea None
+    logger.info(f"setup_draggable_list returned: {type(new_order)}, value: {new_order}")
+    
+    # CORRECCIÓN: Manejar caso donde setup_draggable_list devuelve None
+    if new_order is None:
+        logger.warning("setup_draggable_list returned None, using original items order")
+        new_order = items
     
     # Calcular cambios de prioridad basados en el nuevo orden
     for idx, item in enumerate(new_order, start=1):
@@ -149,17 +169,12 @@ def _render_priority_controls(initial_data):
 
 def _render_simulation_config():
     """Renderiza configuración de simulación"""
-    col1, col2 = st.columns(2)
+    logger.info("Iniciando renderizado de configuración de simulación")
     
-    with col1:
-        sim_start_date = st.date_input(
-            "📅 Fecha de inicio de simulación",
-            value=date.today(),
-            key="real_sim_start"
-        )
+    # Usar fecha actual como inicio de simulación
+    sim_start_date = date.today()
     
-    with col2:
-        auto_run = st.checkbox("🔄 Ejecutar automáticamente al cambiar prioridades", value=True)
+    auto_run = st.checkbox("🔄 Ejecutar automáticamente al cambiar prioridades", value=True)
     
     return sim_start_date, auto_run
 
@@ -184,11 +199,23 @@ def _should_run_simulation(priority_overrides, auto_run):
 def _execute_simulation(initial_data, priority_overrides, sim_start_date):
     """Ejecuta la simulación con los parámetros dados"""
     try:
-        # Preparar datos de simulación
-        simulation_input = load_simulation_input_from_db(sim_start_date)
+        # Preparar datos de simulación usando la fecha actual
+        simulation_input = load_simulation_input_from_db(date.today())
         
         # Aplicar overrides de prioridad
         _apply_priority_overrides(simulation_input, priority_overrides)
+        
+        # Usar fecha actual como referencia temporal para el scheduler
+        # CORRECCIÓN: Asegurar que la fecha de simulación no interfiera con fecha_inicio_real
+        simulation_input.simulation_start_date = date.today()
+        
+        # Agregar logs para verificar fechas de inicio real
+        logger.info("🔍 DEBUG FECHAS DE INICIO REAL EN PROYECTOS:")
+        for project_id, project in simulation_input.projects.items():
+            if project.fecha_inicio_real:
+                logger.info(f"  - Proyecto {project.name} (ID: {project_id}): fecha_inicio_real = {project.fecha_inicio_real}")
+            else:
+                logger.info(f"  - Proyecto {project.name} (ID: {project_id}): SIN fecha_inicio_real")
         
         # Ejecutar simulación
         with st.spinner("Ejecutando simulación..."):
@@ -235,7 +262,7 @@ def _render_simulation_results(priority_overrides):
 
 def _render_metrics(simulation_input, result, priority_overrides):
     """Renderiza métricas generales de la simulación"""
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         st.metric("📋 Proyectos", len(simulation_input.projects))
@@ -246,6 +273,9 @@ def _render_metrics(simulation_input, result, priority_overrides):
     with col4:
         changes = len(priority_overrides)
         st.metric("🔄 Cambios de Prioridad", changes, delta=changes if changes > 0 else None)
+    
+    with col5:
+        st.metric("📅 Fecha Base", "Hoy")
 
 
 def _render_gantt_chart(result, simulation_input):
@@ -255,11 +285,11 @@ def _render_gantt_chart(result, simulation_input):
     # Control de vista
     view_type = st.radio(
         "📊 Tipo de Vista",
-        options=["detailed", "consolidated"],
-        format_func=lambda x: "🔍 Vista Detallada" if x == "detailed" else "📈 Vista Consolidada",
+        options=["consolidated", "detailed"],
+        format_func=lambda x: "📈 Vista Consolidada" if x == "consolidated" else "🔍 Vista Detallada",
         horizontal=True,
         key="gantt_view_type",
-        help="Vista Detallada: Una línea por proyecto-fase | Vista Consolidada: Timeline continuo por proyecto"
+        help="Vista Consolidada: Timeline continuo por proyecto | Vista Detallada: Una línea por proyecto-fase"
     )
     
     try:
@@ -271,6 +301,7 @@ def _render_gantt_chart(result, simulation_input):
         
         if not gantt_df.empty:
             project_colors = get_project_colors_map(simulation_input.projects)
+            # Usar fecha actual para el Gantt
             fig = get_gantt_figure(gantt_df, view_type, project_colors=project_colors, add_markers=True)
             
             if fig:
@@ -380,6 +411,9 @@ def _render_project_details(result, project, project_id, project_assignments):
         st.dataframe(pd.DataFrame(assignment_data), use_container_width=True)
 
 
+
+
+
 def _render_help_section():
     """Renderiza sección de ayuda"""
     with st.expander("ℹ️ Cómo usar la Simulación"):
@@ -390,8 +424,8 @@ def _render_help_section():
         - Prioridad 1 = Más alta, Prioridad 10 = Más baja
         
         **📅 Cronograma de Gantt:**
+        - **Vista Consolidada** (por defecto): Muestra un timeline continuo por proyecto con fases en colores
         - **Vista Detallada**: Muestra una línea por cada proyecto-fase
-        - **Vista Consolidada**: Muestra un timeline continuo por proyecto con fases en colores
         - Usa el switch para alternar entre vistas
         - Los resultados se mantienen al cambiar de vista
         

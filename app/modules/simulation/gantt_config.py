@@ -5,6 +5,7 @@ Maneja la configuración visual y de interactividad para cada tipo de vista
 
 import plotly.express as px
 import pandas as pd
+from datetime import date
 from typing import Dict, Optional
 from .gantt_views import PHASE_COLORS, PROJECT_COLORS
 

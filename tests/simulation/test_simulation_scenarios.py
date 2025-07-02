@@ -17,10 +17,13 @@ class TestSimulationScenarios:
         Verificar que Arch → Devs → Model → Dqa se ejecutan en orden correcto
         """
         # Setup: 1 proyecto, 4 equipos, 4 asignaciones secuenciales
+        # Setup equipos con IDs que coinciden con el orden en el scheduler
+        # Según el scheduler: team_order = {2: 1, 1: 2, 3: 3, 4: 4}
+        # Donde 2 = Arch, 1 = Devs, 3 = Model, 4 = Dqa
         teams = {
-            1: Team(id=1, name="Arch", total_devs=2, tier_capacities={1: 16}),
-            2: Team(id=2, name="Model", total_devs=2, tier_capacities={2: 80}),
-            3: Team(id=3, name="Devs", total_devs=3, tier_capacities={3: 80}),
+            2: Team(id=2, name="Arch", total_devs=2, tier_capacities={1: 16}),
+            1: Team(id=1, name="Devs", total_devs=3, tier_capacities={3: 80}),
+            3: Team(id=3, name="Model", total_devs=2, tier_capacities={2: 80}),
             4: Team(id=4, name="Dqa", total_devs=2, tier_capacities={2: 24})
         }
         
@@ -33,15 +36,15 @@ class TestSimulationScenarios:
         
         assignments = [
             Assignment(id=1, project_id=1, project_name="Simple Project", project_priority=1,
-                      team_id=1, team_name="Arch", tier=1, devs_assigned=1.0, max_devs=2.0,
+                      team_id=2, team_name="Arch", tier=1, devs_assigned=1.0, max_devs=2.0,
                       estimated_hours=16, ready_to_start_date=date(2025, 1, 1),
                       assignment_start_date=date(2025, 1, 1)),
             Assignment(id=2, project_id=1, project_name="Simple Project", project_priority=1,
-                      team_id=2, team_name="Model", tier=2, devs_assigned=1.0, max_devs=2.0,
+                      team_id=1, team_name="Devs", tier=3, devs_assigned=1.0, max_devs=3.0,
                       estimated_hours=80, ready_to_start_date=date(2025, 1, 1),
                       assignment_start_date=date(2025, 1, 1)),
             Assignment(id=3, project_id=1, project_name="Simple Project", project_priority=1,
-                      team_id=3, team_name="Devs", tier=3, devs_assigned=1.0, max_devs=3.0,
+                      team_id=3, team_name="Model", tier=2, devs_assigned=1.0, max_devs=2.0,
                       estimated_hours=80, ready_to_start_date=date(2025, 1, 1),
                       assignment_start_date=date(2025, 1, 1)),
             Assignment(id=4, project_id=1, project_name="Simple Project", project_priority=1,
@@ -228,10 +231,13 @@ class TestSimulationScenarios:
         Arch → Devs → Model → Dqa con cálculos reales
         """
         # Setup equipos especializados según arquitectura APE
+        # Setup equipos con IDs que coinciden con el orden en el scheduler
+        # Según el scheduler: team_order = {2: 1, 1: 2, 3: 3, 4: 4}
+        # Donde 2 = Arch, 1 = Devs, 3 = Model, 4 = Dqa
         teams = {
-            1: Team(id=1, name="Arch", total_devs=2, tier_capacities={1: 16, 2: 32, 3: 72, 4: 240}),
-            2: Team(id=2, name="Model", total_devs=4, tier_capacities={1: 40, 2: 80, 3: 120, 4: 160}),
-            3: Team(id=3, name="Devs", total_devs=6, tier_capacities={1: 16, 2: 40, 3: 80, 4: 120}),
+            2: Team(id=2, name="Arch", total_devs=2, tier_capacities={1: 16, 2: 32, 3: 72, 4: 240}),
+            1: Team(id=1, name="Devs", total_devs=6, tier_capacities={1: 16, 2: 40, 3: 80, 4: 120}),
+            3: Team(id=3, name="Model", total_devs=4, tier_capacities={1: 40, 2: 80, 3: 120, 4: 160}),
             4: Team(id=4, name="Dqa", total_devs=3, tier_capacities={1: 8, 2: 24, 3: 40})  # Sin Tier 4
         }
         
@@ -240,24 +246,24 @@ class TestSimulationScenarios:
                       due_date_wo_qa=date(2025, 3, 1), due_date_with_qa=date(2025, 3, 15))
         }
         
-        # Asignaciones según patrón APE real
+        # Asignaciones según patrón APE real con IDs correctos
         assignments = [
-            # Arch: Tier 1, 1 dev
+            # Arch: Tier 1, 1 dev (team_id=2)
             Assignment(id=1, project_id=1, project_name="Full APE Project", project_priority=1,
-                      team_id=1, team_name="Arch", tier=1, devs_assigned=1.0, max_devs=2.0,
+                      team_id=2, team_name="Arch", tier=1, devs_assigned=1.0, max_devs=2.0,
                       estimated_hours=16, ready_to_start_date=date(2025, 1, 1),
                       assignment_start_date=date(2025, 1, 1)),
-            # Model: Tier 2, 1 dev
+            # Devs: Tier 3, 2 devs (team_id=1)
             Assignment(id=2, project_id=1, project_name="Full APE Project", project_priority=1,
-                      team_id=2, team_name="Model", tier=2, devs_assigned=1.0, max_devs=4.0,
-                      estimated_hours=80, ready_to_start_date=date(2025, 1, 1),
-                      assignment_start_date=date(2025, 1, 1)),
-            # Devs: Tier 3, 2 devs
-            Assignment(id=3, project_id=1, project_name="Full APE Project", project_priority=1,
-                      team_id=3, team_name="Devs", tier=3, devs_assigned=2.0, max_devs=6.0,
+                      team_id=1, team_name="Devs", tier=3, devs_assigned=2.0, max_devs=6.0,
                       estimated_hours=160, ready_to_start_date=date(2025, 1, 1),
                       assignment_start_date=date(2025, 1, 1)),
-            # Dqa: Tier 2, 1 dev
+            # Model: Tier 2, 1 dev (team_id=3)
+            Assignment(id=3, project_id=1, project_name="Full APE Project", project_priority=1,
+                      team_id=3, team_name="Model", tier=2, devs_assigned=1.0, max_devs=4.0,
+                      estimated_hours=80, ready_to_start_date=date(2025, 1, 1),
+                      assignment_start_date=date(2025, 1, 1)),
+            # Dqa: Tier 2, 1 dev (team_id=4)
             Assignment(id=4, project_id=1, project_name="Full APE Project", project_priority=1,
                       team_id=4, team_name="Dqa", tier=2, devs_assigned=1.0, max_devs=3.0,
                       estimated_hours=24, ready_to_start_date=date(2025, 1, 1),
