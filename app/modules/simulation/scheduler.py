@@ -81,7 +81,7 @@ class ProjectScheduler:
                 effective_priority = (1, assignment.project_priority)
             
             # Luego por orden de equipos APE (orden correcto)
-            team_order = {2: 1, 1: 2, 3: 3, 4: 4}.get(assignment.team_id, 999)  # Arch → Devs → Model → Dqa
+            team_order = {2: 1, 3: 2, 1: 3, 4: 4}.get(assignment.team_id, 999)  # Arch (2) → Devs (3) → Model (1) → Dqa (4)
             return (effective_priority, team_order, assignment.id)
         
         sorted_assignments = sorted(all_assignments, key=sort_key)
@@ -136,35 +136,9 @@ class ProjectScheduler:
         
         # Fecha mínima de inicio (constraint de ready_to_start_date)
         ready = max(validate_date_range(assignment.ready_to_start_date, f"ready_to_start_date assignment {assignment.id}"), today)
+
+        # Simulador puro: solo usar ready_to_start_date y today (sin fecha_inicio_real)
         
-        # CORRECCIÓN ROBUSTA: Usar fecha_inicio_real del proyecto si está disponible
-        # Verificar si es la primera asignación del proyecto (no está en project_next_free)
-        # O si es la asignación de Arch (que siempre debe respetar fecha_inicio_real)
-        if projects and assignment.project_id in projects:
-            project = projects[assignment.project_id]
-            if project.fecha_inicio_real:
-                fecha_inicio_real = validate_date_range(project.fecha_inicio_real, f"fecha_inicio_real project {assignment.project_id}")
-                
-                # Verificar si es la primera asignación o si es Arch (team_id=2)
-                is_first_assignment = assignment.project_id not in project_next_free
-                is_arch_team = assignment.team_id == 2  # Arch tiene team_id=2
-                
-                if is_first_assignment or is_arch_team:
-                    # Siempre usar fecha_inicio_real para la primera asignación o para Arch
-                    logger.info(f"🔍 DEBUG FECHA_INICIO_REAL: Usando fecha_inicio_real {fecha_inicio_real} para proyecto {project.name} (ID: {project.id})")
-                    logger.info(f"🔍 DETALLES: Es primera asignación: {is_first_assignment}, Es equipo Arch: {is_arch_team}")
-                    logger.info(f"🔍 FECHAS: ready antes={ready}, fecha_inicio_real={fecha_inicio_real}")
-                    
-                    # CORRECCIÓN CRÍTICA: Para Arch, la fecha de inicio DEBE SER EXACTAMENTE fecha_inicio_real
-                    # No usar max() que podría dar una fecha posterior
-                    if is_arch_team:
-                        ready = fecha_inicio_real
-                        logger.info(f"🔍 FORZANDO FECHA EXACTA para Arch: {fecha_inicio_real}")
-                    else:
-                        # Para otras asignaciones, asegurar que la fecha de inicio sea al menos la fecha_inicio_real
-                        ready = max(ready, fecha_inicio_real)
-                    
-                    logger.info(f"🔍 RESULTADO: ready después={ready}")
         
         # Respetar dependencias del proyecto (asignaciones anteriores)
         if assignment.project_id in project_next_free:

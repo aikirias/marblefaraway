@@ -156,12 +156,10 @@ def transform_to_consolidated_view(assignments: List[Assignment], projects: Dict
     import logging
     logger = logging.getLogger(__name__)
     
-    # Agregar logs para verificar fechas de inicio real en proyectos
-    logger.info("🔍 DEBUG FECHAS EN VISTA CONSOLIDADA:")
+    # Debug de fechas calculadas en vista consolidada
+    logger.info("🔍 DEBUG FECHAS CALCULADAS EN VISTA CONSOLIDADA:")
     for project_id, project in projects.items():
-        if hasattr(project, 'fecha_inicio_real') and project.fecha_inicio_real:
-            logger.info(f"  - Proyecto {project.name} (ID: {project_id}):")
-            logger.info(f"    * fecha_inicio_real = {project.fecha_inicio_real}")
+        logger.info(f"  - Proyecto {project.name} (ID: {project_id}) procesado")
     
     gantt_data = []
     
@@ -282,23 +280,10 @@ def prepare_gantt_data(result: ScheduleResult, view_type: str, simulation_input:
     import logging
     logger = logging.getLogger(__name__)
     
-    # Verificar fechas de inicio real en proyectos antes de transformar
-    logger.info("🔍 DEBUG FECHAS ANTES DE TRANSFORMAR PARA GANTT:")
+    # Debug básico de proyectos a procesar
+    logger.info("🔍 DEBUG PROYECTOS PARA GANTT:")
     for project_id, project in simulation_input.projects.items():
-        if hasattr(project, 'fecha_inicio_real') and project.fecha_inicio_real:
-            # Buscar la asignación de Arch para este proyecto
-            arch_assignments = [a for a in result.assignments 
-                               if a.project_id == project_id and a.team_name == "Arch"]
-            
-            if arch_assignments:
-                arch_assignment = arch_assignments[0]
-                logger.info(f"  - Proyecto {project.name} (ID: {project_id}):")
-                logger.info(f"    * fecha_inicio_real = {project.fecha_inicio_real}")
-                logger.info(f"    * Arch calculated_start_date = {arch_assignment.calculated_start_date}")
-                
-                # Verificar si hay discrepancia
-                if arch_assignment.calculated_start_date != project.fecha_inicio_real:
-                    logger.warning(f"⚠️ DISCREPANCIA DETECTADA: La fecha calculada para Arch ({arch_assignment.calculated_start_date}) no coincide con fecha_inicio_real ({project.fecha_inicio_real})")
+        logger.info(f"  - Procesando proyecto {project.name} (ID: {project_id})")
     
     if view_type == "detailed":
         return transform_to_detailed_view(result.assignments, simulation_input.projects)
