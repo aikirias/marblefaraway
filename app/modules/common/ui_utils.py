@@ -7,13 +7,13 @@ from typing import List, Dict, Any, Optional
 
 # Configuración global de drag & drop
 try:
-    from st_draggable_list import DraggableList
+    from streamlit_sortables import sort_items
     DRAGGABLE_AVAILABLE = True
 except ImportError:
     DRAGGABLE_AVAILABLE = False
 
 
-def setup_draggable_list(items: List[Dict], text_key: str, key: str) -> Optional[List[Dict]]:
+def setup_draggable_list(items: List[Dict], text_key: str, key: str) -> List[Dict]:
     """
     Configura lista draggable con fallback si no está disponible
     Args:
@@ -21,21 +21,32 @@ def setup_draggable_list(items: List[Dict], text_key: str, key: str) -> Optional
         text_key: Clave del texto a mostrar en cada elemento
         key: Clave única para el componente Streamlit
     Returns:
-        Lista reordenada o None si no hay cambios
+        Lista reordenada (siempre devuelve una lista)
     """
     if DRAGGABLE_AVAILABLE:
         try:
-            return DraggableList(
-                items,
-                text_key=text_key,
-                key=key
+            # Preparar items para streamlit-sortables
+            sortable_items = [item[text_key] for item in items]
+            
+            # Usar sort_items para crear la interfaz drag & drop
+            sorted_items = sort_items(
+                sortable_items,
+                key=key,
+                direction="vertical"
             )
+            
+            # Crear un mapeo de texto a item original
+            text_to_item = {item[text_key]: item for item in items}
+            # Reconstruir lista en el nuevo orden
+            return [text_to_item[text] for text in sorted_items if text in text_to_item]
+                
         except Exception as e:
-            st.warning(f"Error con drag & drop: {e}. Usando lista estática.")
-            return None
+            st.warning(f"Error con drag & drop: {e}. Usando controles numéricos.")
+            # Fallback a controles numéricos - no mostrar lista estática
+            return items
     else:
-        st.info("📝 Drag & drop no disponible. Mostrando lista estática.")
-        return None
+        # No mostrar mensaje, solo retornar items para que se usen controles numéricos
+        return items
 
 
 def render_project_state_display(project) -> str:

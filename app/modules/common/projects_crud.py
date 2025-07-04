@@ -184,3 +184,58 @@ def delete_project_by_name(project_name: str) -> bool:
         )
         
         return True
+
+
+def apply_priorities_from_active_plan():
+    """
+    Aplica las prioridades del plan activo a los proyectos en la base de datos
+    
+    Returns:
+        True si se aplicaron prioridades, False si no hay plan activo
+    """
+    from .plans_crud import get_active_plan, apply_plan_priorities
+    
+    active_plan = get_active_plan()
+    if not active_plan:
+        return False
+    
+    return apply_plan_priorities(active_plan.id)
+
+
+def read_all_projects_with_plan_priorities() -> Dict[int, Project]:
+    """
+    Lee todos los proyectos considerando las prioridades del plan activo
+    
+    Returns:
+        Diccionario de proyectos con prioridades actualizadas desde el plan activo
+    """
+    from .plans_crud import get_active_plan, get_plan_priorities
+    from .priority_utils import apply_plan_priorities_to_projects
+    
+    # Obtener proyectos normalmente
+    projects = read_all_projects()
+    
+    # Obtener prioridades del plan activo si existe
+    active_plan = get_active_plan()
+    if active_plan:
+        plan_priorities = get_plan_priorities(active_plan.id)
+        if plan_priorities:
+            projects = apply_plan_priorities_to_projects(projects, plan_priorities)
+    
+    return projects
+
+
+def update_project_priority_from_plan(project_id: int, new_priority: int):
+    """
+    Actualiza la prioridad de un proyecto específico
+    
+    Args:
+        project_id: ID del proyecto
+        new_priority: Nueva prioridad
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            projects_table.update()
+            .where(projects_table.c.id == project_id)
+            .values(priority=new_priority)
+        )

@@ -51,246 +51,199 @@ from ..common.db import (
 
 
 def render_monitoring():
+    logger.info("🔍 DEBUG: INICIANDO render_monitoring()")
     st.header("Delivery Forecast")
 
-    # 1) Load ALL projects (active and paused) with effective priority
+    # Importar funciones del módulo simulation
+    from ..simulation.simulation import render_simulation_for_monitoring
+    logger.info("🔍 DEBUG: Importación de render_simulation_for_monitoring exitosa")
+    
+    # Verificar que hay proyectos
     df_proj = pd.read_sql(
         sa.select(
             projects_table.c.id.label("project_id"),
             projects_table.c.name.label("project_name"),
             projects_table.c.priority,
             projects_table.c.active
-        ).order_by(projects_table.c.active.desc(), projects_table.c.priority),  # Active first, then by priority
+        ).order_by(projects_table.c.active.desc(), projects_table.c.priority),
         engine
     )
     if df_proj.empty:
         st.info("No projects to monitor.")
         return
 
-    # Add drag and drop priority management
-    _render_priority_management(df_proj)
+    # Usar el módulo simulation para generar el cronograma con gestión de prioridades integrada
+    st.subheader("📊 Simulación y Gestión de Cronograma")
+    st.markdown("Ajusta las prioridades temporalmente y simula el cronograma. Opcionalmente, puedes persistir los cambios.")
     
-    st.markdown("---")
+    # Ejecutar simulación integrada con gestión de prioridades
+    _render_simulation_with_plans_integration()
 
-    # 2) Load teams capacity
-    df_teams = pd.read_sql(
-        sa.select(
-            teams_table.c.id,
-            teams_table.c.total_devs,
-            teams_table.c.busy_devs
-        ),
-        engine
-    ).set_index("id")
 
-    # 3) Load assignments + tier capacity
-    assign_q = (
-        sa.select(
-            project_team_assignments_table.c.project_id.label("project_id"),
-            projects_table.c.name         .label("project_name"),
-            project_team_assignments_table.c.team_id,
-            teams_table.c.name            .label("phase"),
-            project_team_assignments_table.c.tier,
-            project_team_assignments_table.c.devs_assigned,
-            project_team_assignments_table.c.estimated_hours,
-            tier_capacity_table.c.hours_per_person
-        )
-        .select_from(
-            project_team_assignments_table
-            .join(projects_table,
-                  project_team_assignments_table.c.project_id == projects_table.c.id)
-            .join(teams_table,
-                  project_team_assignments_table.c.team_id    == teams_table.c.id)
-            .join(tier_capacity_table,
-                  sa.and_(
-                      project_team_assignments_table.c.team_id == tier_capacity_table.c.team_id,
-                      project_team_assignments_table.c.tier    == tier_capacity_table.c.tier
-                  ))
-        )
-    )
-    df_assign = pd.read_sql(assign_q, engine)
-    if df_assign.empty:
-        st.info("No assignments for monitoring.")
+
+
+
+def _get_current_priorities_from_db():
+    """Obtiene las prioridades actuales desde la base de datos"""
+    try:
+        with engine.begin() as conn:
+            result = conn.execute(
+                sa.select(
+                    projects_table.c.id,
+                    projects_table.c.priority
+                ).order_by(projects_table.c.priority)
+            ).fetchall()
+            
+            return {row.id: row.priority for row in result}
+    except Exception as e:
+        logger.error(f"Error obteniendo prioridades de DB: {e}")
+        return {}
+
+
+
+
+
+
+def _render_simulation_with_plans_integration():
+    """Renderiza simulación integrada con funcionalidad de planes y persistencia"""
+    logger.info("🔍 DEBUG: Iniciando _render_simulation_with_plans_integration")
+    
+    try:
+        from ..simulation.simulation import render_simulation_for_monitoring
+        logger.info("🔍 DEBUG: Importación exitosa de render_simulation_for_monitoring")
+        
+        # Ejecutar simulación usando la función pública del módulo simulation
+        # Esta función renderiza directamente el contenido de la simulación
+        logger.info("🔍 DEBUG: Llamando a render_simulation_for_monitoring()")
+        simulation_result = render_simulation_for_monitoring()
+        
+        # Manejar el resultado correctamente
+        if simulation_result is None or len(simulation_result) != 3:
+            logger.info("🔍 DEBUG: render_simulation_for_monitoring retornó None o formato incorrecto")
+            return
+            
+        result, simulation_input, priority_overrides = simulation_result
+        logger.info(f"🔍 DEBUG: render_simulation_for_monitoring retornó: result={result is not None}, simulation_input={simulation_input is not None}, priority_overrides={priority_overrides is not None}")
+        
+        # Si hay resultados, mostrar la sección de guardado de planes
+        if result is not None and simulation_input is not None:
+            st.markdown("---")
+            _render_simple_save_section(result, simulation_input, priority_overrides)
+            
+    except Exception as e:
+        logger.error(f"🔍 ERROR en _render_simulation_with_plans_integration: {e}")
+        st.error(f"Error en simulación: {e}")
         return
 
-    # 4) Prepare simulation structures
-    active_by_team = {tid: [] for tid in df_teams.index}
-    project_next_free = {}
-    df = df_assign.merge(df_proj[["project_id", "priority"]], on="project_id", how="left")
-    df["phase_order"] = df["phase"].map({p: i for i, p in enumerate(PHASE_ORDER)})
-    df = df.sort_values(["priority", "phase_order"])
 
-    records = []
-    today = date.today()
-
-    # 5) Simulate each assignment
-    for r in df.itertuples():
-        # always allow start no earlier than today
-        ready = today
-
-        pid        = r.project_id
-        tid        = r.team_id
-        total_devs = df_teams.loc[tid, "total_devs"]
-        busy0      = df_teams.loc[tid, "busy_devs"]
-        devs_req   = r.devs_assigned
-
-        # hours needed: manual override or tier * devs
-        if r.estimated_hours and r.estimated_hours > 0:
-            hours_needed = r.estimated_hours
+def _render_simple_save_section(result, simulation_input, priority_overrides):
+    """Renderiza una sección simplificada para guardar planes"""
+    st.subheader("💾 Guardar Plan")
+    
+    # Verificar si hay cambios de prioridad
+    has_priority_changes = _has_priority_changes(priority_overrides)
+    
+    if has_priority_changes:
+        st.info("💡 **Cambios de prioridad detectados** - Puedes persistir estos cambios junto con el plan")
+    
+    # Formulario para guardar
+    with st.form("save_plan_monitoring"):
+        plan_name = st.text_input(
+            "Nombre del plan:",
+            value=f"Plan {date.today().strftime('%B %Y')}",
+            placeholder="Ej: Plan Julio 2025",
+            help="Nombre descriptivo para este cronograma"
+        )
+        
+        plan_description = st.text_area(
+            "Descripción (opcional):",
+            placeholder="Describe las características de este plan...",
+            help="Información adicional sobre este cronograma"
+        )
+        
+        # Checkbox para persistir prioridades
+        persist_priorities = st.checkbox(
+            "🔄 Persistir cambios de prioridad en la base de datos",
+            value=False,
+            disabled=not has_priority_changes,
+            help="Guarda permanentemente los cambios de prioridad realizados en la simulación" if has_priority_changes else "No hay cambios de prioridad para persistir"
+        )
+        
+        save_button = st.form_submit_button("💾 Guardar Plan", type="primary")
+    
+    if save_button:
+        if plan_name.strip():
+            _save_monitoring_plan(plan_name.strip(), plan_description.strip(), result, priority_overrides if persist_priorities else None)
         else:
-            hours_needed = r.hours_per_person * devs_req
+            st.error("❌ El nombre del plan es obligatorio")
 
-        # respect project dependency
-        if pid in project_next_free:
-            ready = max(ready, project_next_free[pid])
 
-        # compute days needed
-        hours_per_day = devs_req * 8
-        days_needed   = math.ceil(hours_needed / hours_per_day)
+def _save_monitoring_plan(name, description, result, priority_overrides=None):
+    """Guarda el cronograma de monitoring como plan y opcionalmente persiste prioridades"""
+    from ..common.plans_crud import save_plan
+    
+    try:
+        # Si hay cambios de prioridad, persistirlos primero
+        if priority_overrides:
+            _persist_priority_changes(priority_overrides)
+            st.success("✅ **Prioridades actualizadas en la base de datos**")
+        
+        # Guardar el plan usando las funciones de plans_crud
+        plan = save_plan(
+            result=result,
+            name=name,
+            description=description,
+            set_as_active=True
+        )
+        
+        success_message = f"✅ **Plan '{name}' guardado exitosamente**"
+        if priority_overrides:
+            success_message += " (con cambios de prioridad persistidos)"
+        
+        st.success(success_message)
+        st.info(f"📋 Plan ID: {plan.id} | Fecha: {plan.simulation_date}")
+        st.info("💡 El plan está ahora activo y disponible para comparaciones futuras")
+        
+        # Mostrar botón para ir a simulación
+        if st.button("🔬 Ver en Módulo Simulación"):
+            st.switch_page("pages/simulation.py")
+        
+    except Exception as e:
+        logger.error(f"Error guardando plan desde monitoring: {e}")
+        st.error(f"❌ **Error guardando plan**: {e}")
 
-        def fits(s: date) -> bool:
-            """Check that for each business day in [s, s+days_needed) capacity allows devs_req."""
-            try:
-                s = validate_date_range(s, f"fits() start date for team {tid}")
-                for i in range(days_needed):
-                    day = safe_business_day_calculation(s, i, f"fits() day {i} for team {tid}")
-                    used = busy0 + sum(a["devs"] for a in active_by_team[tid]
-                                       if a["start"] <= day <= a["end"])
-                    if used + devs_req > total_devs:
-                        return False
+
+def _has_priority_changes(priority_overrides):
+    """Verifica si hay cambios de prioridad respecto a la base de datos"""
+    if not priority_overrides:
+        return False
+    
+    try:
+        # Obtener prioridades actuales de la DB
+        current_priorities = _get_current_priorities_from_db()
+        
+        # Comparar con los overrides
+        for project_id, new_priority in priority_overrides.items():
+            if current_priorities.get(project_id) != new_priority:
                 return True
-            except Exception as e:
-                logger.error(f"Error en fits() para team {tid}: {e}")
-                return False
-
-        # find earliest start where it fits
-        start_sim = validate_date_range(ready, f"initial start_sim for team {tid}")
-        max_iterations = 180  # Límite para evitar bucles infinitos
-        iterations = 0
         
-        while not fits(start_sim) and iterations < max_iterations:
-            iterations += 1
-            logger.debug(f"Iteración {iterations} buscando slot para team {tid}, fecha actual: {start_sim}")
-            
-            try:
-                # advance to the next free day for this team
-                overlapping = [a["end"] for a in active_by_team[tid]
-                               if a["start"] <= start_sim <= a["end"]]
-                if overlapping:
-                    min_end = min(overlapping)
-                    start_sim = safe_business_day_calculation(min_end, 1, f"overlapping advance team {tid}")
-                else:
-                    start_sim = safe_business_day_calculation(start_sim, 1, f"normal advance team {tid}")
-            except Exception as e:
-                logger.error(f"Error avanzando fecha para team {tid}: {e}")
-                # Fallback: usar fecha actual + 1 día
-                from datetime import timedelta
-                start_sim = validate_date_range(start_sim + timedelta(days=1), f"fallback advance team {tid}")
-        
-        if iterations >= max_iterations:
-            logger.error(f"No se pudo encontrar slot para team {tid} después de {max_iterations} iteraciones")
-            # Usar fecha de ready como fallback
-            start_sim = validate_date_range(ready, f"max_iterations fallback team {tid}")
-
-        # compute end date
-        try:
-            start_sim = validate_date_range(start_sim, f"final start_sim for team {tid}")
-            end_ts = pd.Timestamp(start_sim) + BusinessDay(days_needed) - BusinessDay(1)
-            end_sim = validate_date_range(end_ts.date(), f"end_sim for team {tid}")
-            next_free = safe_business_day_calculation(end_sim, 1, f"project_next_free for project {pid}")
-        except Exception as e:
-            logger.error(f"Error calculando fechas de fin para team {tid}: {e}")
-            # Fallback seguro
-            from datetime import timedelta
-            end_sim = validate_date_range(start_sim + timedelta(days=days_needed), f"fallback end_sim team {tid}")
-            next_free = validate_date_range(end_sim + timedelta(days=1), f"fallback next_free project {pid}")
-
-        # register this assignment
-        active_by_team[tid].append({
-            "start": start_sim,
-            "end":   end_sim,
-            "devs":  devs_req
-        })
-        project_next_free[pid] = next_free
-
-        records.append({
-            "project_id":   pid,
-            "project_name": r.project_name,
-            "phase":        r.phase,
-            "start":        start_sim,
-            "end":          end_sim
-        })
-
-    sched = pd.DataFrame(records)
-
-    # 6) Summarize one row per project
-    output = []
-    for pid, grp in sched.groupby("project_id"):
-        name = grp.iloc[0]["project_name"]
-        arch = grp[grp.phase == "Arch"].iloc[0]
-        dqa  = grp[grp.phase == "Dqa"].iloc[-1]
-
-        start_date = arch["start"]
-        est_end    = dqa["end"]
-
-        # determine current state
-        if today < start_date:
-            state = "Not started"
-        else:
-            state = "Done" if today > est_end else "Waiting"
-            for phase in PHASE_ORDER:
-                ph = grp[grp.phase == phase]
-                if not ph.empty:
-                    s, e = ph.iloc[0][["start", "end"]]
-                    if s <= today <= e:
-                        state = phase
-                        break
-
-        output.append({
-            "Project":  name,
-            "State":    state,
-            "Start":    start_date,
-            "Est. End": est_end
-        })
-
-    st.table(pd.DataFrame(output))
+        return False
+    except Exception as e:
+        logger.error(f"Error verificando cambios de prioridad: {e}")
+        return False
 
 
-def _render_priority_management(df_proj):
-    """Renderiza interfaz de gestión de prioridades con drag and drop"""
-    st.subheader("🔄 Gestión de Prioridades")
-    
-    # Preparar items para drag and drop con prioridad efectiva
-    items = []
-    for _, row in df_proj.iterrows():
-        state_symbol = "🟢" if row.active else "⏸️"
-        state_text = "Activo" if row.active else "Pausado"
-        items.append({
-            "id": row.project_id,
-            "name": f"({row.priority}) {row.project_name} - {state_symbol} {state_text}"
-        })
-    
-    new_order = setup_draggable_list(items, text_key="name", key="monitoring_priority_sort")
-    
-    # Manejar caso donde setup_draggable_list devuelve None
-    if new_order is None:
-        new_order = items
-    
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        if st.button("💾 Guardar Nuevo Orden", key="save_monitoring_priorities"):
-            try:
-                # Actualizar prioridades en la base de datos
-                with engine.begin() as conn:
-                    for idx, item in enumerate(new_order, start=1):
-                        conn.execute(
-                            projects_table.update()
-                            .where(projects_table.c.id == item["id"])
-                            .values(priority=idx)
-                        )
-                st.success("✅ Prioridades actualizadas en Monitoring.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error actualizando prioridades: {e}")
-    
-    with col2:
-        st.info("💡 Arrastra los proyectos para cambiar su prioridad. Los activos siempre tienen prioridad sobre los pausados.")
+def _persist_priority_changes(priority_overrides):
+    """Persiste los cambios de prioridad en la base de datos"""
+    try:
+        with engine.begin() as conn:
+            for project_id, new_priority in priority_overrides.items():
+                conn.execute(
+                    projects_table.update()
+                    .where(projects_table.c.id == project_id)
+                    .values(priority=new_priority)
+                )
+        logger.info(f"Prioridades persistidas: {priority_overrides}")
+    except Exception as e:
+        logger.error(f"Error persistiendo prioridades: {e}")
+        raise

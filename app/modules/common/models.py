@@ -4,8 +4,10 @@ Versión refactorizada con código limpio y métodos optimizados
 """
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import List, Dict, Optional, TYPE_CHECKING
+import hashlib
+import json
 
 if TYPE_CHECKING:
     from .assignments_crud import Assignment
@@ -161,6 +163,10 @@ class ScheduleResult:
     assignments: List[Assignment]
     project_summaries: List[Dict]
     
+    # Campos para sistema de planes
+    checksum: str = ""
+    has_changes: bool = True
+    
     def get_project_end_date(self, project_id: int) -> Optional[date]:
         """Fecha de fin del proyecto (última asignación)"""
         project_assignments = [a for a in self.assignments if a.project_id == project_id]
@@ -201,3 +207,124 @@ class SimulationInput:
     def __post_init__(self):
         if self.simulation_start_date is None:
             self.simulation_start_date = date.today()
+
+
+@dataclass
+class Plan:
+    """Plan persistente - snapshot de un resultado de simulación"""
+    id: Optional[int] = None
+    name: str = ""
+    description: Optional[str] = None
+    checksum: str = ""
+    created_at: Optional[datetime] = None
+    is_active: bool = False
+    simulation_date: date = None
+    total_assignments: int = 0
+    total_projects: int = 0
+    
+    # Assignments del plan (cargados dinámicamente)
+    assignments: List['PlanAssignment'] = field(default_factory=list)
+    
+    def __post_init__(self):
+        if self.simulation_date is None:
+            self.simulation_date = date.today()
+        if self.created_at is None:
+            self.created_at = datetime.now()
+    
+    def calculate_checksum(self, assignments: List[Assignment]) -> str:
+        """
+        Calcula checksum SHA-256 basado en el contenido de las asignaciones
+        Usa assignment_id + fechas calculadas para detectar cambios
+        """
+        if not assignments:
+            return hashlib.sha256("empty".encode()).hexdigest()
+        
+        # Crear estructura ordenada para hash consistente
+        assignment_data = []
+        for assignment in sorted(assignments, key=lambda a: a.id):
+            data = {
+                'assignment_id': assignment.id,
+                'project_id': assignment.project_id,
+                'team_id': assignment.team_id,
+                'calculated_start_date': assignment.calculated_start_date.isoformat() if assignment.calculated_start_date else None,
+                'calculated_end_date': assignment.calculated_end_date.isoformat() if assignment.calculated_end_date else None,
+                'pending_hours': assignment.pending_hours,
+                'devs_assigned': float(assignment.devs_assigned)
+            }
+            assignment_data.append(data)
+        
+        # Convertir a JSON ordenado y calcular hash
+        json_str = json.dumps(assignment_data, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(json_str.encode('utf-8')).hexdigest()
+    
+    @classmethod
+    def from_schedule_result(cls, result: ScheduleResult, name: str = "", description: str = "") -> 'Plan':
+        """Crea un Plan desde un ScheduleResult"""
+        plan = cls(
+            name=name or f"Plan {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            description=description,
+            simulation_date=date.today(),
+            total_assignments=len(result.assignments),
+            total_projects=len(set(a.project_id for a in result.assignments))
+        )
+        
+        # Calcular checksum
+        plan.checksum = plan.calculate_checksum(result.assignments)
+        
+        return plan
+
+
+@dataclass
+class PlanAssignment:
+    """Asignación dentro de un plan - snapshot de Assignment calculado"""
+    id: Optional[int] = None
+    plan_id: int = 0
+    assignment_id: int = 0
+    project_id: int = 0
+    project_name: str = ""
+    project_priority: int = 0
+    priority_order: Optional[int] = None  # Prioridad específica del plan
+    team_id: int = 0
+    team_name: str = ""
+    tier: int = 0
+    devs_assigned: float = 0.0
+    estimated_hours: int = 0
+    calculated_start_date: date = None
+    calculated_end_date: date = None
+    pending_hours: int = 0
+    ready_to_start_date: date = None
+    
+    def __post_init__(self):
+        if self.calculated_start_date is None:
+            self.calculated_start_date = date.today()
+        if self.calculated_end_date is None:
+            self.calculated_end_date = date.today()
+        if self.ready_to_start_date is None:
+            self.ready_to_start_date = date.today()
+    
+    @classmethod
+    def from_assignment(cls, assignment: Assignment, plan_id: int, priority_order: Optional[int] = None) -> 'PlanAssignment':
+        """Crea un PlanAssignment desde un Assignment calculado"""
+        return cls(
+            plan_id=plan_id,
+            assignment_id=assignment.id,
+            project_id=assignment.project_id,
+            project_name=assignment.project_name,
+            project_priority=assignment.project_priority,
+            priority_order=priority_order or assignment.project_priority,
+            team_id=assignment.team_id,
+            team_name=assignment.team_name,
+            tier=assignment.tier,
+            devs_assigned=assignment.devs_assigned,
+            estimated_hours=assignment.estimated_hours,
+            calculated_start_date=assignment.calculated_start_date,
+            calculated_end_date=assignment.calculated_end_date,
+            pending_hours=assignment.pending_hours,
+            ready_to_start_date=assignment.ready_to_start_date
+        )
+    
+    def get_duration_days(self) -> int:
+        """Calcula la duración en días de la asignación"""
+        if not self.calculated_start_date or not self.calculated_end_date:
+            return 0
+        return (self.calculated_end_date - self.calculated_start_date).days + 1

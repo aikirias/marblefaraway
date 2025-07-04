@@ -57,3 +57,68 @@ def get_effective_priority_for_dataframe(row) -> tuple:
         return (0, row.get('Priority', 0))
     else:
         return (1, row.get('Priority', 0))
+
+
+def apply_plan_priorities_to_projects(projects: Dict, plan_priorities: Dict[int, int]) -> Dict:
+    """
+    Aplica prioridades de un plan a un diccionario de proyectos
+    
+    Args:
+        projects: Diccionario de proyectos {id: Project}
+        plan_priorities: Diccionario de prioridades del plan {project_id: priority}
+    
+    Returns:
+        Diccionario de proyectos con prioridades actualizadas
+    """
+    updated_projects = projects.copy()
+    
+    for project_id, priority in plan_priorities.items():
+        if project_id in updated_projects:
+            # Crear una copia del proyecto con la nueva prioridad
+            project = updated_projects[project_id]
+            project.priority = priority
+    
+    return updated_projects
+
+
+def get_effective_priority_with_plan(project, plan_priorities: Dict[int, int] = None) -> tuple:
+    """
+    Calcula prioridad efectiva considerando prioridades de plan activo
+    
+    Args:
+        project: Objeto proyecto
+        plan_priorities: Diccionario opcional de prioridades del plan {project_id: priority}
+    
+    Returns:
+        (0, priority) para activos, (1, priority) para pausados
+    """
+    # Obtener prioridad del plan si está disponible
+    priority = project.priority
+    if plan_priorities and hasattr(project, 'id') and project.id in plan_priorities:
+        priority = plan_priorities[project.id]
+    
+    if hasattr(project, 'is_active') and callable(project.is_active):
+        if project.is_active():
+            return (0, priority)  # Activos primero
+        else:
+            return (1, priority)  # Pausados después
+    else:
+        # Fallback para objetos que no tienen método is_active
+        return (0, priority)
+
+
+def sort_by_plan_priority(items: List, plan_priorities: Dict[int, int] = None) -> List:
+    """
+    Ordena items por prioridad considerando prioridades de plan activo
+    
+    Args:
+        items: Lista de items a ordenar
+        plan_priorities: Diccionario opcional de prioridades del plan
+    
+    Returns:
+        Lista ordenada por prioridad efectiva
+    """
+    def key_func(item):
+        return get_effective_priority_with_plan(item, plan_priorities)
+    
+    return sorted(items, key=key_func)

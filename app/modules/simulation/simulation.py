@@ -9,6 +9,8 @@ from datetime import date
 from .scheduler import ProjectScheduler
 from ..common.models import SimulationInput
 import logging
+from ..common.plans_crud import get_active_plan
+from ..common.plan_utils import get_active_assignments
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -24,6 +26,51 @@ def render_simulation():
     st.markdown("Simula cronogramas usando **datos reales** de proyectos y equipos con capacidad de modificar prioridades temporalmente.")
     
     render_real_data_simulation()
+
+
+def render_simulation_for_monitoring():
+    """Renderiza simulación integrada para el módulo de monitoring"""
+    # Cargar datos iniciales
+    initial_data = _load_initial_data()
+    if not initial_data:
+        st.error("🔍 No se pudieron cargar los datos para la simulación")
+        return None, None, None
+    
+    if not _validate_data(initial_data):
+        st.error("🔍 Los datos no son válidos para ejecutar la simulación")
+        return None, None, None
+    
+    # Controles de prioridad (solo para simulación, no afecta DB)
+    st.markdown("### 🎯 Ajuste de Prioridades")
+    st.info("💡 Arrastra los proyectos para cambiar su prioridad temporalmente. Los cambios solo afectan esta simulación hasta que decidas persistirlos.")
+    
+    priority_overrides = _render_priority_controls(initial_data)
+    sim_start_date, auto_run = _render_simulation_config()
+    
+    # Determinar si ejecutar simulación
+    should_run = _should_run_simulation(priority_overrides, auto_run)
+    
+    # Ejecutar simulación automáticamente la primera vez si no hay resultados
+    if not should_run and not hasattr(st.session_state, 'simulation_result'):
+        should_run = True
+        st.info("🔄 Ejecutando simulación inicial...")
+    
+    if should_run:
+        _execute_simulation(initial_data, priority_overrides, sim_start_date)
+    
+    # Mostrar resultados si existen
+    if hasattr(st.session_state, 'simulation_result') and st.session_state.simulation_result is not None:
+        result = st.session_state.simulation_result
+        simulation_input = st.session_state.simulation_input_data
+        
+        # Renderizar el Gantt usando las funciones de simulation
+        _render_gantt_chart(result, simulation_input)
+        
+        # Retornar los resultados para que monitoring pueda usarlos
+        return result, simulation_input, priority_overrides
+    else:
+        st.info("🚀 Haz clic en 'Ejecutar Simulación' para generar el cronograma")
+        return None, None, None
 
 
 def render_real_data_simulation():
@@ -69,16 +116,21 @@ def render_real_data_simulation():
 
 def _load_initial_data():
     """Carga datos iniciales desde la base de datos"""
+    logger.info("🔍 DEBUG: Iniciando _load_initial_data()")
     try:
         with st.spinner("Cargando datos desde la base de datos..."):
+            logger.info("🔍 DEBUG: Llamando a load_simulation_input_from_db()")
             initial_data = load_simulation_input_from_db(date.today())
             
             if initial_data is None:
+                logger.error("🔍 ERROR: load_simulation_input_from_db() retornó None")
                 st.error("Error: No se pudieron cargar los datos desde la base de datos")
                 return None
             
+            logger.info(f"🔍 DEBUG: Datos cargados exitosamente - proyectos: {len(initial_data.projects)}, equipos: {len(initial_data.teams)}, asignaciones: {len(initial_data.assignments)}")
             return initial_data
     except Exception as e:
+        logger.error(f"🔍 ERROR en _load_initial_data(): {e}")
         st.error(f"Error cargando datos: {str(e)}")
         return None
 
@@ -102,8 +154,8 @@ def _validate_data(initial_data):
 
 def _render_priority_controls(initial_data):
     """Renderiza controles de prioridad para proyectos con lista draggable"""
-    st.subheader("🎯 Control de Prioridades (Simulación)")
-    st.markdown("**Arrastra los proyectos para cambiar su prioridad temporalmente y ver el impacto en el cronograma**")
+    # No renderizar subheader aquí, se maneja desde la función que llama
+    st.markdown("**Arrastra los proyectos para cambiar su prioridad y ver el impacto en el cronograma:**")
     
     priority_overrides = {}
     
@@ -117,7 +169,6 @@ def _render_priority_controls(initial_data):
     projects_list = sorted(initial_data.projects.values(), key=effective_priority)
     
     if not DRAGGABLE_AVAILABLE:
-        st.info("🔄 Funcionalidad de drag-and-drop no disponible. Usando controles numéricos:")
         cols = st.columns(min(3, len(projects_list)))
         for i, project in enumerate(projects_list):
             with cols[i % len(cols)]:
@@ -204,6 +255,39 @@ def _execute_simulation(initial_data, priority_overrides, sim_start_date):
         
         # Aplicar overrides de prioridad
         _apply_priority_overrides(simulation_input, priority_overrides)
+
+        # --- NUEVA LÓGICA PARA AJUSTAR HORAS POR PLAN ACTIVO ---
+        active_plan = get_active_plan()
+        if active_plan:
+            logger.info(f"Plan activo encontrado: '{active_plan.name}'. Ajustando horas de la simulación.")
+            
+            # Obtener el progreso de las asignaciones activas en el plan
+            progress_info = get_active_assignments(active_plan, date.today())
+            
+            if progress_info:
+                # Crear un mapa de project_id y team_id a horas restantes para búsqueda rápida
+                progress_map = {
+                    (p['assignment'].project_id, p['assignment'].team_id, p['assignment'].tier): p['remaining_hours']
+                    for p in progress_info
+                }
+                
+                logger.info(f"Progreso encontrado para {len(progress_map)} asignaciones activas.")
+
+                # Actualizar las horas en simulation_input.assignments
+                assignments_updated = 0
+                for assignment in simulation_input.assignments:
+                    key = (assignment.project_id, assignment.team_id, assignment.tier)
+                    if key in progress_map:
+                        remaining_hours = progress_map[key]
+                        if remaining_hours < assignment.estimated_hours:
+                            logger.info(f"  - Ajustando asignación: Proyecto {assignment.project_name} (Tier {assignment.tier})")
+                            logger.info(f"    Horas originales: {assignment.estimated_hours}, Horas restantes: {remaining_hours}")
+                            assignment.estimated_hours = remaining_hours
+                            assignments_updated += 1
+                
+                if assignments_updated > 0:
+                    st.success(f"Se ajustaron las horas de {assignments_updated} fases de proyecto según el progreso del plan activo.")
+        # --- FIN DE LA NUEVA LÓGICA ---
         
         # Usar fecha actual como referencia temporal para el scheduler
         # CORRECCIÓN: Asegurar que la fecha de simulación no interfiera con fecha_inicio_real
@@ -300,6 +384,10 @@ def _render_gantt_chart(result, simulation_input):
         gantt_df = prepare_gantt_data(result, view_type, simulation_input)
         
         if not gantt_df.empty:
+            # DEBUG: Mostrar la tabla de datos del Gantt
+            with st.expander("Ver datos de la simulación (Debug)"):
+                st.dataframe(gantt_df)
+
             project_colors = get_project_colors_map(simulation_input.projects)
             # Usar fecha actual para el Gantt
             fig = get_gantt_figure(gantt_df, view_type, project_colors=project_colors, add_markers=True)
@@ -438,3 +526,91 @@ def _render_help_section():
         - Vista detallada: enfoque en tareas y equipos
         - Vista consolidada: enfoque en proyectos y fases
         """)
+
+
+def _render_save_plan_section(result, simulation_input):
+    """Renderiza la sección para guardar el plan actual"""
+    from ..common.plans_crud import save_plan, compare_plans, get_active_plan
+    from datetime import date
+    
+    st.markdown("---")
+    st.subheader("💾 Gestión de Planes")
+    
+    # Comparar con plan activo
+    try:
+        comparison = compare_plans(result)
+        
+        if comparison['has_changes']:
+            if comparison['active_checksum'] is None:
+                st.info("📝 No hay plan activo. Este será el primer plan guardado.")
+            else:
+                st.warning("⚠️ Se detectaron cambios respecto al plan activo.")
+                for change in comparison['changes_detected']:
+                    st.write(f"• {change}")
+        else:
+            st.success("✅ Sin cambios respecto al plan activo.")
+    except Exception as e:
+        st.error(f"Error comparando planes: {e}")
+    
+    # Formulario para guardar plan
+    with st.form("save_plan_form"):
+        st.markdown("#### Guardar Nuevo Plan")
+        
+        # Generar nombre automático basado en fecha
+        default_name = f"Plan {date.today().strftime('%Y-%m-%d')}"
+        
+        plan_name = st.text_input(
+            "Nombre del plan:", 
+            value=default_name,
+            help="Nombre descriptivo para identificar este plan"
+        )
+        
+        plan_description = st.text_area(
+            "Descripción (opcional):",
+            help="Descripción detallada de los cambios o características de este plan"
+        )
+        
+        set_as_active = st.checkbox(
+            "Marcar como plan activo", 
+            value=True,
+            help="El plan activo se usa como referencia para comparaciones futuras"
+        )
+        
+        col1, col2 = st.columns([1, 3])
+        
+        with col1:
+            save_button = st.form_submit_button("💾 Guardar Plan", type="primary")
+        
+        with col2:
+            if save_button:
+                if not plan_name.strip():
+                    st.error("❌ El nombre del plan es obligatorio")
+                else:
+                    try:
+                        with st.spinner("Guardando plan..."):
+                            saved_plan = save_plan(
+                                result=result,
+                                name=plan_name.strip(),
+                                description=plan_description.strip(),
+                                set_as_active=set_as_active
+                            )
+                        
+                        st.success(f"✅ Plan guardado exitosamente con ID: {saved_plan.id}")
+                        st.info(f"📊 Plan contiene {saved_plan.total_assignments} asignaciones de {saved_plan.total_projects} proyectos")
+                        
+                        # Rerun para actualizar la comparación
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"❌ Error guardando plan: {e}")
+    
+    # Mostrar información del plan activo
+    try:
+        active_plan = get_active_plan()
+        if active_plan:
+            st.markdown("#### 📋 Plan Activo Actual")
+            st.info(f"**{active_plan.name}** (ID: {active_plan.id}) - Creado: {active_plan.created_at.strftime('%Y-%m-%d %H:%M')}")
+            if active_plan.description:
+                st.write(f"*{active_plan.description}*")
+    except Exception as e:
+        st.warning(f"No se pudo obtener información del plan activo: {e}")
