@@ -355,8 +355,37 @@ def add_timeline_markers(fig, gantt_df: pd.DataFrame, show_today: bool = True, s
         pass
 
 
+def add_weekend_shading(fig, start_date, end_date):
+    """
+    Agrega sombreado para los fines de semana (sábado y domingo) en el gráfico.
+
+    Args:
+        fig: Figura de Plotly.
+        start_date: Fecha de inicio del rango a sombrear.
+        end_date: Fecha de fin del rango a sombrear.
+    """
+    from datetime import timedelta
+    
+    current_date = start_date
+    while current_date <= end_date:
+        if current_date.weekday() == 5:  # Es sábado
+            fig.add_shape(
+                type="rect",
+                xref="x",
+                yref="paper",
+                x0=current_date,
+                y0=0,
+                x1=current_date + timedelta(days=2),
+                y1=1,
+                fillcolor="rgba(200, 200, 200, 0.2)",
+                line_width=0,
+                layer="below"
+            )
+        current_date += timedelta(days=1)
+
+
 def get_gantt_figure(gantt_df: pd.DataFrame, view_type: str, project_colors: Dict[str, str] = None, 
-                    phase_colors: Dict[str, str] = None, add_markers: bool = True):
+                     phase_colors: Dict[str, str] = None, add_markers: bool = True):
     """
     Función principal para crear figuras de Gantt según el tipo de vista
     
@@ -391,7 +420,16 @@ def get_gantt_figure(gantt_df: pd.DataFrame, view_type: str, project_colors: Dic
     else:
         raise ValueError(f"Tipo de vista no válido: {view_type}")
     
-    if fig and add_markers:
-        add_timeline_markers(fig, gantt_df, show_today=True, show_months=False)
+    if fig:
+        # Determinar el rango de fechas del gráfico para el sombreado
+        min_date = pd.to_datetime(gantt_df['Start'].min()).date()
+        max_date = pd.to_datetime(gantt_df['Finish'].max()).date()
+        
+        # Agregar sombreado de fines de semana
+        add_weekend_shading(fig, min_date, max_date)
+        
+        # Agregar marcadores de tiempo si es necesario
+        if add_markers:
+            add_timeline_markers(fig, gantt_df, show_today=True, show_months=False)
     
     return fig

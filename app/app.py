@@ -6,7 +6,7 @@ from modules.projects.projects import render_projects
 from modules.monitoring.monitoring import render_monitoring
 from modules.plans.plans import render_plans
 
-from modules.active_projects.active_projects import render_active_projects
+# from modules.active_projects.active_projects import render_active_projects
 
 
 # Configurar logging para ver logs de debug
@@ -22,21 +22,18 @@ st.set_page_config(
 st.title("Automatic Project Estimator (APE)")
 
 # Tabs for Teams and Projects
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Monitoring", "Proyectos Activos", "Planes Guardados", "Teams", "Projects"])
+tab1, tab2, tab3, tab4 = st.tabs(["Monitoring", "Planes Guardados", "Teams", "Projects"])
 
 with tab1:
     render_monitoring()
 
 with tab2:
-    render_active_projects()
-
-with tab3:
     render_plans()
 
-with tab4:
+with tab3:
     render_teams()
 
-with tab5:
+with tab4:
     render_projects()
 
 

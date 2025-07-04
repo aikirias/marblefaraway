@@ -108,7 +108,7 @@ def transform_to_detailed_view(assignments: List[Assignment], projects: Dict = N
             gantt_data.append({
                 "Task": f"{assignment.project_name} - {assignment.team_name}",
                 "Start": pd.Timestamp(assignment.calculated_start_date),
-                "Finish": pd.Timestamp(assignment.calculated_end_date),
+                "Finish": pd.Timestamp(assignment.calculated_end_date) + pd.Timedelta(days=1),
                 "Project": assignment.project_name,
                 "Team": assignment.team_name,
                 "Phase": assignment.team_name,  # Para consistencia
@@ -200,9 +200,9 @@ def transform_to_consolidated_view(assignments: List[Assignment], projects: Dict
                 'name': assignment.team_name,
                 'start': assignment.calculated_start_date,
                 'end': assignment.calculated_end_date,
-                'duration': phase_duration,
-                'hours': assignment.estimated_hours,
-                'devs': assignment.devs_assigned,
+                'duration': float(phase_duration),
+                'hours': float(assignment.estimated_hours),
+                'devs': float(assignment.devs_assigned),
                 'tier': assignment.tier
             })
             total_hours += assignment.estimated_hours
@@ -229,7 +229,7 @@ def transform_to_consolidated_view(assignments: List[Assignment], projects: Dict
         gantt_data.append({
             "Task": f"📋 {project_name}",  # Nombre claro del proyecto
             "Start": pd.Timestamp(project_start),
-            "Finish": pd.Timestamp(project_end),
+            "Finish": pd.Timestamp(project_end) + pd.Timedelta(days=1),
             "Project": project_name,
             "Priority": final_priority,  # Usar la prioridad correcta
             "Active": project_active,  # Estado del proyecto (activo/pausado)
