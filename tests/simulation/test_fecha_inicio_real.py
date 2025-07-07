@@ -1,129 +1,104 @@
 """
-Test para verificar que el scheduler usa correctamente la fecha_inicio_real del proyecto
+Tests para verificar el uso de `fecha_inicio_real` en la simulación
 """
 import pytest
-from datetime import date
-from app.modules.simulation.scheduler import ProjectScheduler
+from datetime import date, timedelta
 from app.modules.common.models import Team, Project, Assignment, SimulationInput
-
+from app.modules.simulation.scheduler import ProjectScheduler
 
 class TestFechaInicioReal:
-    
+    """Testea que el scheduler respete la fecha_inicio_real"""
+
     def test_scheduler_usa_fecha_inicio_real(self):
         """
-        Verifica que el scheduler use la fecha_inicio_real del proyecto como fecha de inicio
-        para la primera asignación del proyecto.
-        
-        Caso de prueba:
-        - Proyecto A con fecha_inicio_real = 2025/06/29
-        - Fecha de simulación = 2025/06/25 (anterior a la fecha_inicio_real)
-        - Verificar que la primera asignación comience en 2025/06/29
+        Test que la simulación usa `fecha_inicio_real` si está presente,
+        ignorando `ready_to_start_date` si es anterior.
         """
+        teams = {1: Team(id=1, name="Arch", total_devs=2)}
         
-        # Setup equipos con IDs que coinciden con el orden en el scheduler
-        # Según el scheduler: team_order = {2: 1, 1: 2, 3: 3, 4: 4}
-        # Donde 2 = Arch, 1 = Devs, 3 = Model, 4 = Dqa
-        teams = {
-            2: Team(id=2, name="Arch", total_devs=2, busy_devs=0, 
-                   tier_capacities={1: 50, 2: 100, 3: 150}),
-            1: Team(id=1, name="Devs", total_devs=2, busy_devs=0, 
-                   tier_capacities={1: 50, 2: 100, 3: 150}),
-            3: Team(id=3, name="Model", total_devs=2, busy_devs=0, 
-                   tier_capacities={1: 50, 2: 100, 3: 150}),
-            4: Team(id=4, name="Dqa", total_devs=2, busy_devs=0, 
-                   tier_capacities={1: 50, 2: 100, 3: 150})
-        }
+        # fecha_inicio_real es posterior a ready_to_start_date
+        fecha_inicio = date(2025, 6, 29)
         
-        # Fecha de inicio real del proyecto
-        fecha_inicio_real = date(2025, 6, 29)
-        
-        # Proyecto con fecha_inicio_real
         projects = {
             1: Project(
-                id=1, 
-                name="Proyecto A", 
-                priority=1,
-                start_date=date(2025, 6, 25),  # Fecha de inicio planificada
-                due_date_wo_qa=date(2025, 7, 15),
-                due_date_with_qa=date(2025, 7, 20),
-                fecha_inicio_real=fecha_inicio_real  # Fecha de inicio real
+                id=1, name="Test Project", priority=1,
+                start_date=date(2025, 6, 1),
+                due_date_wo_qa=date(2025, 7, 1),
+                due_date_with_qa=date(2025, 7, 15),
+                fecha_inicio_real=fecha_inicio
             )
         }
         
-        # Asignaciones para el proyecto
         assignments = [
-            # Primera asignación (Arch) - debería comenzar en fecha_inicio_real
             Assignment(
-                id=1, project_id=1, project_name="Proyecto A", project_priority=1,
-                team_id=2, team_name="Arch", tier=1, devs_assigned=2.0, max_devs=2.0,
-                estimated_hours=50,  # 50 horas / (8 horas/día * 2 devs) = 3.125 días
-                ready_to_start_date=date(2025, 6, 25),  # Fecha anterior a fecha_inicio_real
-                assignment_start_date=date(2025, 6, 25)
-            ),
-            # Segunda asignación (Devs) - debería comenzar después de Arch
-            Assignment(
-                id=2, project_id=1, project_name="Proyecto A", project_priority=1,
-                team_id=1, team_name="Devs", tier=2, devs_assigned=2.0, max_devs=2.0,
-                estimated_hours=100,  # 100 horas / (8 horas/día * 2 devs) = 6.25 días
-                ready_to_start_date=date(2025, 6, 25),
-                assignment_start_date=date(2025, 6, 25)
-            ),
-            # Tercera asignación (Model)
-            Assignment(
-                id=3, project_id=1, project_name="Proyecto A", project_priority=1,
-                team_id=3, team_name="Model", tier=1, devs_assigned=2.0, max_devs=2.0,
-                estimated_hours=50,
-                ready_to_start_date=date(2025, 6, 25),
-                assignment_start_date=date(2025, 6, 25)
-            ),
-            # Cuarta asignación (Dqa)
-            Assignment(
-                id=4, project_id=1, project_name="Proyecto A", project_priority=1,
-                team_id=4, team_name="Dqa", tier=1, devs_assigned=2.0, max_devs=2.0,
-                estimated_hours=50,
-                ready_to_start_date=date(2025, 6, 25),
-                assignment_start_date=date(2025, 6, 25)
+                id=1, project_id=1, team_id=1, team_name="Arch",
+                estimated_hours=16,
+                ready_to_start_date=date(2025, 6, 25), # Esta fecha debe ser ignorada
+                project_name="p", project_priority=1, tier=1, 
+                devs_assigned=1, max_devs=1, assignment_start_date=date(2025,6,1)
             )
         ]
-        
-        # Fecha de simulación anterior a fecha_inicio_real
-        simulation_start_date = date(2025, 6, 25)
-        
+
         simulation_input = SimulationInput(
-            teams=teams, 
-            projects=projects, 
+            teams=teams,
+            projects=projects,
             assignments=assignments,
-            simulation_start_date=simulation_start_date
+            simulation_start_date=date(2025, 6, 25)
         )
-        
-        # Ejecutar simulación
+
         scheduler = ProjectScheduler()
         result = scheduler.simulate(simulation_input)
+
+        assert len(result.assignments) == 1
+        first_assignment = result.assignments[0]
+
+        # La fecha de inicio calculada debe ser la fecha_inicio_real, no la ready_to_start_date
+        assert first_assignment.calculated_start_date == fecha_inicio, \
+            f"La asignación de Arch debería comenzar en la fecha_inicio_real ({fecha_inicio}), pero comienza en {first_assignment.calculated_start_date}"
+
+    def test_scheduler_usa_ready_date_si_es_posterior(self):
+        """
+        Test que la simulación usa `ready_to_start_date` si es posterior
+        a `fecha_inicio_real`.
+        """
+        teams = {1: Team(id=1, name="Arch", total_devs=2)}
         
-        # Obtener asignaciones ordenadas por equipo
-        project_assignments = [a for a in result.assignments if a.project_id == 1]
-        sorted_assignments = sorted(project_assignments, key=lambda x: x.team_id)
+        # ready_to_start_date es posterior a fecha_inicio_real
+        fecha_ready = date(2025, 7, 5)
         
-        # Imprimir resultados para debugging
-        print("\n🔍 RESULTADOS DE LA SIMULACIÓN:")
-        for assignment in sorted_assignments:
-            print(f"  {assignment.team_name}: {assignment.calculated_start_date} a {assignment.calculated_end_date}")
+        projects = {
+            1: Project(
+                id=1, name="Test Project", priority=1,
+                start_date=date(2025, 6, 1),
+                due_date_wo_qa=date(2025, 8, 1),
+                due_date_with_qa=date(2025, 8, 15),
+                fecha_inicio_real=date(2025, 7, 1) # Esta fecha debe ser ignorada
+            )
+        }
         
-        # Verificar que la primera asignación (Arch) comience en fecha_inicio_real
-        arch_assignment = next(a for a in sorted_assignments if a.team_name == "Arch")
-        
-        print(f"\n🔍 VERIFICACIÓN DE FECHA DE INICIO REAL:")
-        print(f"  Fecha de inicio real del proyecto: {fecha_inicio_real}")
-        print(f"  Fecha de inicio calculada para Arch: {arch_assignment.calculated_start_date}")
-        
-        # La asignación de Arch debe comenzar exactamente en la fecha_inicio_real
-        assert arch_assignment.calculated_start_date == fecha_inicio_real, \
-            f"La asignación de Arch debería comenzar en la fecha_inicio_real ({fecha_inicio_real}), " \
-            f"pero comienza en {arch_assignment.calculated_start_date}"
-        
-        # Verificar que las demás asignaciones respeten la secuencia
-        devs_assignment = next(a for a in sorted_assignments if a.team_name == "Devs")
-        assert devs_assignment.calculated_start_date >= arch_assignment.calculated_end_date, \
-            f"La asignación de Devs debería comenzar después de que termine Arch"
-        
-        print("✅ El scheduler usa correctamente la fecha_inicio_real del proyecto")
+        assignments = [
+            Assignment(
+                id=1, project_id=1, team_id=1, team_name="Arch",
+                estimated_hours=16,
+                ready_to_start_date=fecha_ready,
+                project_name="p", project_priority=1, tier=1, 
+                devs_assigned=1, max_devs=1, assignment_start_date=date(2025,6,1)
+            )
+        ]
+
+        simulation_input = SimulationInput(
+            teams=teams,
+            projects=projects,
+            assignments=assignments,
+            simulation_start_date=date(2025, 6, 25)
+        )
+
+        scheduler = ProjectScheduler()
+        result = scheduler.simulate(simulation_input)
+
+        assert len(result.assignments) == 1
+        first_assignment = result.assignments[0]
+
+        # La fecha de inicio calculada debe ser la fecha_ready, que es la restricción más tardía
+        assert first_assignment.calculated_start_date == fecha_ready, \
+            f"La asignación debería comenzar en la fecha_ready ({fecha_ready}), pero comienza en {first_assignment.calculated_start_date}"

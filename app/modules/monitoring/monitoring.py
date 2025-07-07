@@ -73,8 +73,7 @@ def render_monitoring():
         return
 
     # Usar el módulo simulation para generar el cronograma con gestión de prioridades integrada
-    st.subheader("📊 Simulación y Gestión de Cronograma")
-    st.markdown("Ajusta las prioridades temporalmente y simula el cronograma. Opcionalmente, puedes persistir los cambios.")
+    
     
     # Ejecutar simulación integrada con gestión de prioridades
     _render_simulation_with_plans_integration()
@@ -129,6 +128,8 @@ def _render_simulation_with_plans_integration():
         if result is not None and simulation_input is not None:
             st.markdown("---")
             _render_simple_save_section(result, simulation_input, priority_overrides)
+        # La sección de guardado ha sido removida para implementar el guardado automático.
+        pass
             
     except Exception as e:
         logger.error(f"🔍 ERROR en _render_simulation_with_plans_integration: {e}")
@@ -140,13 +141,11 @@ def _render_simple_save_section(result, simulation_input, priority_overrides):
     """Renderiza una sección simplificada para guardar planes"""
     st.subheader("💾 Guardar Plan")
     
-    # Verificar si hay cambios de prioridad
     has_priority_changes = _has_priority_changes(priority_overrides)
     
     if has_priority_changes:
-        st.info("💡 **Cambios de prioridad detectados** - Puedes persistir estos cambios junto con el plan")
+        st.info("💡 **Cambios de prioridad detectados**. Estos cambios se guardarán permanentemente junto con el plan.")
     
-    # Formulario para guardar
     with st.form("save_plan_monitoring"):
         plan_name = st.text_input(
             "Nombre del plan:",
@@ -161,25 +160,19 @@ def _render_simple_save_section(result, simulation_input, priority_overrides):
             help="Información adicional sobre este cronograma"
         )
         
-        # Checkbox para persistir prioridades
-        persist_priorities = st.checkbox(
-            "🔄 Persistir cambios de prioridad en la base de datos",
-            value=False,
-            disabled=not has_priority_changes,
-            help="Guarda permanentemente los cambios de prioridad realizados en la simulación" if has_priority_changes else "No hay cambios de prioridad para persistir"
-        )
-        
         save_button = st.form_submit_button("💾 Guardar Plan", type="primary")
     
     if save_button:
         if plan_name.strip():
-            _save_monitoring_plan(plan_name.strip(), plan_description.strip(), result, priority_overrides if persist_priorities else None)
+            # Si hay cambios de prioridad, se pasan a la función de guardado.
+            # Si no, se pasa None. La persistencia es implícita.
+            _save_monitoring_plan(plan_name.strip(), plan_description.strip(), result, priority_overrides if has_priority_changes else None)
         else:
             st.error("❌ El nombre del plan es obligatorio")
 
 
 def _save_monitoring_plan(name, description, result, priority_overrides=None):
-    """Guarda el cronograma de monitoring como plan y opcionalmente persiste prioridades"""
+    """Guarda el cronograma de monitoring como plan y persiste prioridades si existen"""
     from ..common.plans_crud import save_plan
     
     try:
@@ -193,7 +186,8 @@ def _save_monitoring_plan(name, description, result, priority_overrides=None):
             result=result,
             name=name,
             description=description,
-            set_as_active=True
+            set_as_active=True,
+            current_priorities=priority_overrides
         )
         
         success_message = f"✅ **Plan '{name}' guardado exitosamente**"
@@ -204,7 +198,6 @@ def _save_monitoring_plan(name, description, result, priority_overrides=None):
         st.info(f"📋 Plan ID: {plan.id} | Fecha: {plan.simulation_date}")
         st.info("💡 El plan está ahora activo y disponible para comparaciones futuras")
         
-        # Mostrar botón para ir a simulación
         if st.button("🔬 Ver en Módulo Simulación"):
             st.switch_page("pages/simulation.py")
         
@@ -219,10 +212,8 @@ def _has_priority_changes(priority_overrides):
         return False
     
     try:
-        # Obtener prioridades actuales de la DB
         current_priorities = _get_current_priorities_from_db()
         
-        # Comparar con los overrides
         for project_id, new_priority in priority_overrides.items():
             if current_priorities.get(project_id) != new_priority:
                 return True

@@ -10,7 +10,7 @@ from .scheduler import ProjectScheduler
 from ..common.models import SimulationInput
 import logging
 from ..common.plans_crud import get_active_plan
-from ..common.plan_utils import get_active_assignments
+from ..common.plan_utils import get_active_assignments, get_completed_phases
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -301,16 +301,19 @@ def _execute_simulation(initial_data, priority_overrides, sim_start_date):
             else:
                 logger.info(f"  - Proyecto {project.name} (ID: {project_id}): SIN fecha_inicio_real")
         
+        # Obtener fases completadas para anclarlas en la simulación
+        completed_phases = get_completed_phases()
         # Ejecutar simulación
         with st.spinner("Ejecutando simulación..."):
             scheduler = ProjectScheduler()
-            result = scheduler.simulate(simulation_input)
+            result = scheduler.simulate(simulation_input, completed_phases=completed_phases)
         
         # Guardar resultados
         st.session_state.simulation_result = result
         st.session_state.simulation_input_data = simulation_input
         
         st.success(f"✅ Simulación completada con {len(result.assignments)} asignaciones")
+        
         
     except Exception as e:
         st.error(f"❌ Error ejecutando simulación: {str(e)}")
@@ -412,32 +415,6 @@ def _render_gantt_metrics(gantt_df, view_type):
     if not metrics:
         return
     
-    st.markdown("---")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    if view_type == "detailed":
-        with col1:
-            st.metric("📋 Tareas Totales", metrics.get("total_tasks", 0))
-        with col2:
-            st.metric("👥 Equipos Activos", metrics.get("unique_teams", 0))
-        with col3:
-            st.metric("⏱️ Horas Totales", f"{metrics.get('total_hours', 0):,.0f}")
-        with col4:
-            avg_devs = metrics.get("avg_devs_per_task", 0)
-            st.metric("👨‍💻 Devs Promedio/Tarea", f"{avg_devs:.1f}")
-    else:
-        with col1:
-            st.metric("📋 Proyectos", metrics.get("unique_projects", 0))
-        with col2:
-            st.metric("🔄 Fases Totales", metrics.get("total_phases", 0))
-        with col3:
-            avg_duration = metrics.get("avg_project_duration", 0)
-            st.metric("📅 Duración Promedio", f"{avg_duration:.1f} días")
-        with col4:
-            avg_phases = metrics.get("avg_phases_per_project", 0)
-            st.metric("🔢 Fases Promedio/Proyecto", f"{avg_phases:.1f}")
-
-
 def _render_detailed_results(result, simulation_input):
     """Renderiza resultados detallados por proyecto"""
     st.subheader("📋 Resultado Detallado por Proyecto")

@@ -4,8 +4,8 @@ import json
 import plotly.express as px
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
-from ..common.models import Team, Assignment
-from .scheduler import ProjectScheduler
+from app.modules.common.models import Team, Assignment
+from app.modules.simulation.scheduler import ProjectScheduler
 
 class TestCaseBuilder:
     """Constructor visual de casos de prueba para simulación APE"""

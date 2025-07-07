@@ -1,9 +1,9 @@
 {
   "assignments": [
     {
-      "id": 37,
-      "project_id": 10,
-      "project_name": "d",
+      "id": 29,
+      "project_id": 8,
+      "project_name": "B",
       "project_priority": 1,
       "team_id": 2,
       "team_name": "Arch",
@@ -15,14 +15,14 @@
       "assignment_start_date": "2025-06-30",
       "status": "Not Started",
       "custom_estimated_hours": null,
-      "calculated_start_date": "2025-07-04",
+      "calculated_start_date": "2025-07-05",
       "calculated_end_date": "2025-07-07",
       "pending_hours": 16
     },
     {
-      "id": 40,
-      "project_id": 10,
-      "project_name": "d",
+      "id": 32,
+      "project_id": 8,
+      "project_name": "B",
       "project_priority": 1,
       "team_id": 3,
       "team_name": "Model",
@@ -39,9 +39,9 @@
       "pending_hours": 40
     },
     {
-      "id": 38,
-      "project_id": 10,
-      "project_name": "d",
+      "id": 30,
+      "project_id": 8,
+      "project_name": "B",
       "project_priority": 1,
       "team_id": 1,
       "team_name": "Devs",
@@ -58,9 +58,9 @@
       "pending_hours": 16
     },
     {
-      "id": 39,
-      "project_id": 10,
-      "project_name": "d",
+      "id": 31,
+      "project_id": 8,
+      "project_name": "B",
       "project_priority": 1,
       "team_id": 4,
       "team_name": "Dqa",
@@ -77,28 +77,28 @@
       "pending_hours": 8
     },
     {
-      "id": 29,
-      "project_id": 8,
-      "project_name": "B",
+      "id": 25,
+      "project_id": 7,
+      "project_name": "A",
       "project_priority": 2,
       "team_id": 2,
       "team_name": "Arch",
-      "tier": 1,
+      "tier": 2,
       "devs_assigned": 1.0,
       "max_devs": 1.0,
-      "estimated_hours": 16,
+      "estimated_hours": 32,
       "ready_to_start_date": "2025-06-30",
       "assignment_start_date": "2025-06-30",
       "status": "Not Started",
       "custom_estimated_hours": null,
-      "calculated_start_date": "2025-07-04",
-      "calculated_end_date": "2025-07-07",
-      "pending_hours": 16
+      "calculated_start_date": "2025-07-05",
+      "calculated_end_date": "2025-07-09",
+      "pending_hours": 32
     },
     {
-      "id": 32,
-      "project_id": 8,
-      "project_name": "B",
+      "id": 28,
+      "project_id": 7,
+      "project_name": "A",
       "project_priority": 2,
       "team_id": 3,
       "team_name": "Model",
@@ -115,9 +115,9 @@
       "pending_hours": 40
     },
     {
-      "id": 30,
-      "project_id": 8,
-      "project_name": "B",
+      "id": 26,
+      "project_id": 7,
+      "project_name": "A",
       "project_priority": 2,
       "team_id": 1,
       "team_name": "Devs",
@@ -134,9 +134,9 @@
       "pending_hours": 16
     },
     {
-      "id": 31,
-      "project_id": 8,
-      "project_name": "B",
+      "id": 27,
+      "project_id": 7,
+      "project_name": "A",
       "project_priority": 2,
       "team_id": 4,
       "team_name": "Dqa",
@@ -153,28 +153,28 @@
       "pending_hours": 8
     },
     {
-      "id": 25,
-      "project_id": 7,
-      "project_name": "A",
+      "id": 37,
+      "project_id": 10,
+      "project_name": "d",
       "project_priority": 3,
       "team_id": 2,
       "team_name": "Arch",
-      "tier": 2,
+      "tier": 1,
       "devs_assigned": 1.0,
       "max_devs": 1.0,
-      "estimated_hours": 32,
+      "estimated_hours": 16,
       "ready_to_start_date": "2025-06-30",
       "assignment_start_date": "2025-06-30",
       "status": "Not Started",
       "custom_estimated_hours": null,
       "calculated_start_date": "2025-07-08",
-      "calculated_end_date": "2025-07-11",
-      "pending_hours": 32
+      "calculated_end_date": "2025-07-09",
+      "pending_hours": 16
     },
     {
-      "id": 28,
-      "project_id": 7,
-      "project_name": "A",
+      "id": 40,
+      "project_id": 10,
+      "project_name": "d",
       "project_priority": 3,
       "team_id": 3,
       "team_name": "Model",
@@ -191,9 +191,9 @@
       "pending_hours": 40
     },
     {
-      "id": 26,
-      "project_id": 7,
-      "project_name": "A",
+      "id": 38,
+      "project_id": 10,
+      "project_name": "d",
       "project_priority": 3,
       "team_id": 1,
       "team_name": "Devs",
@@ -210,9 +210,9 @@
       "pending_hours": 16
     },
     {
-      "id": 27,
-      "project_id": 7,
-      "project_name": "A",
+      "id": 39,
+      "project_id": 10,
+      "project_name": "d",
       "project_priority": 3,
       "team_id": 4,
       "team_name": "Dqa",
@@ -243,8 +243,8 @@
       "assignment_start_date": "2025-06-30",
       "status": "Not Started",
       "custom_estimated_hours": null,
-      "calculated_start_date": "2025-07-08",
-      "calculated_end_date": "2025-07-09",
+      "calculated_start_date": "2025-07-10",
+      "calculated_end_date": "2025-07-11",
       "pending_hours": 16
     },
     {
@@ -307,11 +307,11 @@
   ],
   "project_summaries": [
     {
-      "project_id": 10,
-      "project_name": "d",
+      "project_id": 8,
+      "project_name": "B",
       "priority": 1,
       "state": "In progress (Arch)",
-      "calculated_start_date": "2025-07-04",
+      "calculated_start_date": "2025-07-05",
       "calculated_end_date": "2025-07-17",
       "original_start_date": "2025-06-30",
       "due_date_wo_qa": "2025-06-30",
@@ -321,22 +321,22 @@
       "delay_days": 17
     },
     {
-      "project_id": 8,
-      "project_name": "B",
+      "project_id": 7,
+      "project_name": "A",
       "priority": 2,
       "state": "In progress (Arch)",
-      "calculated_start_date": "2025-07-04",
+      "calculated_start_date": "2025-07-05",
       "calculated_end_date": "2025-07-24",
       "original_start_date": "2025-06-30",
       "due_date_wo_qa": "2025-06-30",
       "due_date_with_qa": "2025-06-30",
       "total_assignments": 4,
-      "total_hours": 80,
+      "total_hours": 96,
       "delay_days": 24
     },
     {
-      "project_id": 7,
-      "project_name": "A",
+      "project_id": 10,
+      "project_name": "d",
       "priority": 3,
       "state": "Not started",
       "calculated_start_date": "2025-07-08",
@@ -345,7 +345,7 @@
       "due_date_wo_qa": "2025-06-30",
       "due_date_with_qa": "2025-06-30",
       "total_assignments": 4,
-      "total_hours": 96,
+      "total_hours": 80,
       "delay_days": 31
     },
     {
@@ -353,7 +353,7 @@
       "project_name": "c",
       "priority": 4,
       "state": "Not started",
-      "calculated_start_date": "2025-07-08",
+      "calculated_start_date": "2025-07-10",
       "calculated_end_date": "2025-08-07",
       "original_start_date": "2025-06-30",
       "due_date_wo_qa": "2025-06-30",

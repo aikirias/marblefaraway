@@ -52,7 +52,7 @@ def read_project(project_id: int) -> Optional[Project]:
             start_date=result.start_date,
             due_date_wo_qa=result.due_date_wo_qa,
             due_date_with_qa=result.due_date_with_qa,
-            active=result.active if result.active is not None else True,
+            active=bool(result.active) if result.active is not None else True,
             fecha_inicio_real=result.fecha_inicio_real
         )
 
@@ -82,7 +82,7 @@ def read_all_projects() -> Dict[int, Project]:
                 start_date=row.start_date,
                 due_date_wo_qa=row.due_date_wo_qa,
                 due_date_with_qa=row.due_date_with_qa,
-                active=row.active if row.active is not None else True,
+                active=bool(row.active) if row.active is not None else True,
                 fecha_inicio_real=row.fecha_inicio_real
             )
             

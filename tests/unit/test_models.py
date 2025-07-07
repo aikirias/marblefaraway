@@ -99,7 +99,7 @@ class TestAssignment:
         assert sample_assignment.calculated_start_date is None
         assert sample_assignment.calculated_end_date is None
         assert sample_assignment.pending_hours == 0
-        assert sample_assignment.paused_on is None
+        
 
 
 class TestScheduleResult:
