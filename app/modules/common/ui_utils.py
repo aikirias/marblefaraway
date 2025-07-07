@@ -15,43 +15,35 @@ except ImportError:
 
 def setup_draggable_list(items: List[Dict], text_key: str, key: str) -> List[Dict]:
     """
-    Configura lista draggable con fallback si no está disponible
+    Configura lista draggable usando streamlit-sortables
     Args:
         items: Lista de elementos a mostrar
         text_key: Clave del texto a mostrar en cada elemento
         key: Clave única para el componente Streamlit
     Returns:
-        Lista reordenada (siempre devuelve una lista)
+        Lista reordenada
     """
     if DRAGGABLE_AVAILABLE:
         try:
-            # CSS para que los elementos de la lista no parezcan botones
-            # Se aplica un fondo transparente, sin bordes y color de texto claro
-            st.markdown("""
-                <style>
-                    div[data-stale="false"] > div[data-testid="stVerticalBlock"] .stButton > button {
-                        background-color: transparent;
-                        border: none;
-                        color: #fafafa; /* Color de texto para tema oscuro de Streamlit */
-                        text-align: left !important;
-                        display: block;
-                        width: 100%;
-                    }
-                    div[data-stale="false"] > div[data-testid="stVerticalBlock"] .stButton > button:hover {
-                        background-color: rgba(255, 255, 255, 0.1); /* Feedback visual al pasar el mouse */
-                        color: #fafafa;
-                    }
-                </style>
-            """, unsafe_allow_html=True)
-
             # Preparar items para streamlit-sortables
             sortable_items = [item[text_key] for item in items]
-            
+            simple_style = """
+                .sortable-component {
+                    background-color:rgb(255, 255, 255);
+                    font-size: 16px;
+                    counter-reset: item;
+                }
+                .sortable-item {
+                    background-color: white;
+                    color: black;
+                }
+                """
             # Usar sort_items para crear la interfaz drag & drop
             sorted_items = sort_items(
                 sortable_items,
                 key=key,
-                direction="vertical"
+                direction="vertical",
+                custom_style=simple_style
             )
             
             # Crear un mapeo de texto a item original
@@ -60,11 +52,10 @@ def setup_draggable_list(items: List[Dict], text_key: str, key: str) -> List[Dic
             return [text_to_item[text] for text in sorted_items if text in text_to_item]
                 
         except Exception as e:
-            st.warning(f"Error con drag & drop: {e}. Usando controles numéricos.")
-            # Fallback a controles numéricos - no mostrar lista estática
+            st.warning(f"Error con drag & drop: {e}")
             return items
     else:
-        # No mostrar mensaje, solo retornar items para que se usen controles numéricos
+        st.error("streamlit-sortables no está disponible")
         return items
 
 
