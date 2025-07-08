@@ -1,210 +1,543 @@
+"""
+Gestión de proyectos APE - Versión consolidada y refactorizada
+Combina funcionalidad de projects.py y projects_simple.py eliminando duplicación
+"""
+
 import streamlit as st
-import pandas as pd
-import sqlalchemy as sa
-from sqlalchemy import func
-from modules.common.db import (
-    engine,
-    projects_table,
-    teams_table,
-    project_team_assignments_table,
-    tier_capacity_table,
-    run
+from datetime import date
+# Importar utilidades comunes
+from modules.common.models import Project, Assignment
+from modules.common.projects_crud import (
+    create_project, read_all_projects, update_project, delete_project_by_name
 )
-from st_draggable_list import DraggableList
+from modules.common.assignments_crud import create_assignment
+from modules.common.teams_crud import read_all_teams
+
 
 def render_projects():
+    """Renderiza la gestión de proyectos sin subtabs"""
     st.header("Project Management")
-
-    # ————————————————————————————————
-    # 1) Create New Project (with default assignments)
-    # ————————————————————————————————
-    st.subheader("Create New Project")
-    pname = st.text_input("Project Name", key="proj_name")
-    start = st.date_input("Start Date", key="proj_start")
-
-    if st.button("Create Project") and pname:
-        # Abrimos UNA transacción para todo el proceso
-        with engine.begin() as conn:
-            # 1. Insert project y recuperar su ID
-            result = conn.execute(
-                sa.insert(projects_table)
-                .values(
-                    name=pname,
-                    priority=int(
-                        conn.execute(
-                            sa.select(func.coalesce(func.max(projects_table.c.priority), 0))
-                        ).scalar()
-                    ) + 1,
-                    phase="",               # opcional si ya no lo usas
-                    start_date=start,
-                    due_date_wo_qa=start,
-                    due_date_with_qa=start
-                )
-                .returning(projects_table.c.id)
-            )
-            proj_id = result.scalar()
-
-            # 2. Para cada equipo, insertar assignment con defaults
-            team_ids = conn.execute(
-                sa.select(teams_table.c.id)
-            ).scalars().all()
-
-            for team_id in team_ids:
-                max_tier = conn.execute(
-                    sa.select(func.max(tier_capacity_table.c.tier))
-                    .where(tier_capacity_table.c.team_id == team_id)
-                ).scalar() or 1
-
-                conn.execute(
-                    project_team_assignments_table.insert().values(
-                        project_id=proj_id,
-                        team_id=team_id,
-                        tier=int(max_tier),
-                        devs_assigned=1,
-                        max_devs=1,
-                        estimated_hours=0,
-                        start_date=start,
-                        ready_to_start_date=start,
-                        paused_on=None,
-                        pending_hours=0,
-                        status="Not Started"
-                    )
-                )
-
-        st.success(f"Project '{pname}' created with ID {proj_id} y default assignments.")
+    
+    # Mostrar directamente la funcionalidad de gestión sin subtabs
+    render_project_management()
 
 
 
-    # --------------------------------------------
-    # 2) Reorder Projects
-    # --------------------------------------------
-    st.subheader("Reorder Projects")
-    df_proj = pd.read_sql(
-        sa.select(
-            projects_table.c.id,
-            projects_table.c.name,
-            projects_table.c.priority
-        ).order_by(projects_table.c.priority),
-        engine
+
+
+def render_project_management():
+    """Gestión completa de proyectos: crear, editar, eliminar"""
+    st.subheader("📋 Gestión de Proyectos")
+    
+    projects = _load_projects_safely()
+    
+    if projects:
+        st.markdown("### Proyectos Existentes")
+        _render_filtered_projects(projects, "mgmt_filter", editable=True)
+        st.markdown("---")
+    
+    _render_project_creation_form(projects)
+    _render_project_deletion_section(projects)
+
+
+
+
+
+# ============================================================================
+# FUNCIONES PRIVADAS DE UTILIDAD
+# ============================================================================
+
+def _load_projects_safely():
+    """Carga proyectos con manejo de errores"""
+    try:
+        return read_all_projects()
+    except Exception as e:
+        st.error(f"Error cargando proyectos: {e}")
+        return {}
+
+
+
+
+
+def _render_filtered_projects(projects, filter_key, editable=False):
+    """Renderiza proyectos con filtros aplicados"""
+    show_filter = st.selectbox(
+        "🔍 Mostrar",
+        ["Todos", "Solo Activos", "Solo Inactivos"],
+        index=0,  # Por defecto mostrar "Todos"
+        key=filter_key
     )
-    if df_proj.empty:
-        st.info("No projects to display.")
+    
+    filtered_projects = _filter_projects(projects, show_filter)
+    
+    # Debug info
+    st.write(f"🔍 Filtro aplicado: {show_filter}")
+    st.write(f"📊 Proyectos encontrados: {len(filtered_projects)}")
+    
+    if not filtered_projects:
+        st.info(f"No hay proyectos para mostrar con el filtro '{show_filter}'")
         return
+    
+    # Mostrar lista de proyectos encontrados
+    st.write("📋 Proyectos a mostrar:")
+    for i, project in enumerate(filtered_projects):
+        state = "Activo" if project.is_active() else "Pausado"
+        st.write(f"  {i+1}. {project.name} - {state} (Prioridad: {project.priority})")
+    
+    st.markdown("---")
+    
+    for project in filtered_projects:
+        if editable:
+            _render_editable_project_card(project)
+        else:
+            _render_simple_project_card(project)
 
-    items = [{"id": r.id, "name": f"({r.priority}) {r.name}"} for r in df_proj.itertuples()]
-    new_order = DraggableList(items, text_key="name", key="proj_sort")
-    if st.button("Save Order"):
-        for idx, itm in enumerate(new_order, start=1):
-            run(
-                projects_table.update()
-                              .where(projects_table.c.id == itm["id"])
-                              .values(priority=idx)
+
+def _filter_projects(projects, filter_type):
+    """Filtra proyectos según el tipo especificado con prioridad efectiva"""
+    filtered = list(projects.values())
+    
+    if filter_type == "Solo Activos":
+        filtered = [p for p in filtered if p.is_active()]
+    elif filter_type == "Solo Inactivos":
+        filtered = [p for p in filtered if not p.is_active()]
+    
+    # Implementar prioridad efectiva: activos primero por prioridad, luego pausados por prioridad
+    def effective_priority(project):
+        if project.is_active():
+            return (0, project.priority)  # Activos tienen prioridad 0 (más alta)
+        else:
+            return (1, project.priority)  # Pausados tienen prioridad 1 (más baja)
+    
+    return sorted(filtered, key=effective_priority)
+
+
+def _render_simple_project_card(project):
+    """Renderiza tarjeta simple de proyecto"""
+    bg_color = "#e8f5e8" if project.is_active() else "#f5f5f5"
+    
+    with st.container():
+        st.markdown(f"""
+        <div style="background-color: {bg_color}; padding: 15px; border-radius: 10px; margin: 10px 0;">
+        """, unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns([3, 1, 1])
+        
+        with col1:
+            st.markdown(f"**{project.name}** (Prioridad: {project.priority})")
+            st.markdown(f"📅 {project.start_date} → {project.due_date_with_qa}")
+            
+            if project.get_horas_totales_estimadas() > 0:
+                st.markdown(f"⏱️ Progreso: {project.get_progreso_display()}")
+                st.markdown(f"🔄 Horas faltantes: {project.get_horas_faltantes()}")
+                progress_pct = project.get_progreso_porcentaje() / 100
+                st.progress(progress_pct)
+            elif project.get_horas_trabajadas() > 0:
+                st.markdown(f"⏱️ Horas trabajadas: {project.get_horas_trabajadas()}")
+            
+            if project.fecha_inicio_real:
+                st.markdown(f"🚀 Inicio real: {project.fecha_inicio_real}")
+        
+        with col2:
+            st.markdown(f"**Estado:** {project.get_state_display()}")
+        
+        with col3:
+            _render_project_activation_control(project)
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _render_editable_project_card(project):
+    """Renderiza tarjeta editable de proyecto"""
+    from modules.common.assignments_crud import read_assignments_by_project
+    
+    with st.expander(f"{project.get_state_display()} {project.name} (Prioridad: {project.priority})"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            new_active = st.checkbox(
+                "Proyecto Activo",
+                value=project.is_active(),
+                key=f"edit_active_{project.id}"
             )
-        st.success("Project priorities updated.")
-
-    # --------------------------------------------
-    # 3) Edit Team Assignments
-    # --------------------------------------------
-    st.subheader("Edit Team Assignments")
-    selected_name = st.selectbox(
-        "Select Project to Edit",
-        df_proj["name"].tolist(),
-        key="sel_proj_edit"
-    )
-    proj_id = int(df_proj[df_proj["name"] == selected_name]["id"].iloc[0])
-
-    # Leer asignaciones existentes
-    assign_q = (
-        sa.select(
-            project_team_assignments_table.c.id,
-            project_team_assignments_table.c.team_id,
-            teams_table.c.name.label("team_name"),
-            project_team_assignments_table.c.tier,
-            project_team_assignments_table.c.devs_assigned,
-            project_team_assignments_table.c.max_devs,
-            project_team_assignments_table.c.estimated_hours,
-            project_team_assignments_table.c.ready_to_start_date,
-            project_team_assignments_table.c.start_date.label("assignment_start")
-        )
-        .select_from(
-            project_team_assignments_table.join(
-                teams_table,
-                project_team_assignments_table.c.team_id == teams_table.c.id
-            )
-        )
-        .where(project_team_assignments_table.c.project_id == proj_id)
-    )
-    df_assign = pd.read_sql(assign_q, engine)
-
-    if df_assign.empty:
-        st.info("No assignments for this project.")
-        return
-
-    # Para cada asignación, un expander con campos editables
-    for row in df_assign.itertuples():
-        with st.expander(row.team_name):
-            # Tier: opciones filtradas por team_id
-            tiers_df = pd.read_sql(
-                sa.select(
-                    tier_capacity_table.c.tier
-                )
-                .where(tier_capacity_table.c.team_id == row.team_id)
-                .order_by(tier_capacity_table.c.tier),
-                engine
-            )
-            tier_opts = tiers_df["tier"].tolist()
-            new_tier = st.selectbox(
-                "Tier",
-                tier_opts,
-                index=tier_opts.index(row.tier) if row.tier in tier_opts else 0,
-                key=f"tier_{row.id}"
-            )
-
-            # Devs assigned / max devs
-            new_assigned = st.number_input(
-                "Devs Assigned",
-                min_value=0.25,
-                max_value=100.0,
-                step=0.25,
-                value=float(row.devs_assigned),
-                key=f"assigned_{row.id}"
-            )
-            new_max = st.number_input(
-                "Max Devs",
-                min_value=0.25,
-                max_value=100.0,
-                step=0.25,
-                value=float(row.max_devs),
-                key=f"max_{row.id}"
-            )
-
-            # Estimated hours
+            
             new_hours = st.number_input(
-                "Estimated Hours",
+                "Horas Trabajadas",
                 min_value=0,
-                value=int(row.estimated_hours),
-                key=f"hours_{row.id}"
+                value=project.get_horas_trabajadas(),
+                key=f"hours_{project.id}",
+                help="Este valor se calcula automáticamente desde assignments"
             )
-
-            # Ready to start date
-            new_ready = st.date_input(
-                "Ready to Start Date",
-                value=row.ready_to_start_date or row.assignment_start,
-                key=f"ready_{row.id}"
+            
+            new_total_hours = st.number_input(
+                "Horas Totales Estimadas",
+                min_value=0,
+                value=project.get_horas_totales_estimadas(),
+                key=f"total_hours_{project.id}",
+                help="Este valor se calcula automáticamente desde assignments"
             )
+        
+        with col2:
+            new_start_real = st.date_input(
+                "Fecha de Inicio Real",
+                value=project.fecha_inicio_real,
+                key=f"start_real_{project.id}"
+            )
+            
+            st.markdown(f"**Fechas:** {project.start_date} → {project.due_date_with_qa}")
+            
+            if new_total_hours > 0:
+                temp_progress = _calculate_temp_progress(project, new_hours, new_total_hours)
+                st.markdown(f"**Progreso:** {temp_progress['display']}")
+                st.markdown(f"**Horas faltantes:** {temp_progress['remaining']}")
+        
+        # Configuración de Tiers y Devs por Etapa
+        st.markdown("---")
+        st.markdown("**🎯 Configuración de Tiers y Devs por Etapa**")
+        
+        # Cargar asignaciones actuales del proyecto
+        current_assignments = read_assignments_by_project(project.id)
+        teams = read_all_teams()
+        tier_changes = {}
+        dev_changes = {}
+        
+        if current_assignments and teams:
+            for assignment in current_assignments:
+                team = teams.get(assignment.team_id)
+                if team and team.tier_capacities:
+                    col_tier, col_devs = st.columns(2)
+                    
+                    with col_tier:
+                        available_tiers = list(team.tier_capacities.keys())
+                        current_tier = assignment.tier
+                        
+                        new_tier = st.selectbox(
+                            f"Tier para {assignment.team_name}",
+                            available_tiers,
+                            index=available_tiers.index(current_tier) if current_tier in available_tiers else 0,
+                            key=f"tier_{assignment.team_id}_{project.id}"
+                        )
+                        
+                        if new_tier != current_tier:
+                            tier_changes[assignment.id] = new_tier
+                            # Mostrar preview de horas estimadas
+                            new_estimated_hours = team.get_hours_per_person_for_tier(new_tier)
+                            st.info(f"Nuevo tier {new_tier}: {new_estimated_hours} horas estimadas")
+                    
+                    with col_devs:
+                        current_devs = assignment.devs_assigned
+                        max_devs = team.total_devs  # Usar total de devs del equipo como máximo
+                        
+                        new_devs = st.number_input(
+                            f"Devs asignados para {assignment.team_name}",
+                            min_value=0.0,
+                            max_value=float(max_devs),
+                            value=float(current_devs),
+                            step=0.5,
+                            key=f"devs_{assignment.team_id}_{project.id}",
+                            help=f"Máximo disponible: {max_devs}"
+                        )
+                        
+                        if new_devs != current_devs:
+                            dev_changes[assignment.id] = new_devs
+                
+                # Campo de horas estimadas personalizadas
+        st.markdown("---")
+        st.markdown("**⏱️ Horas Estimadas Personalizadas**")
+        custom_hours_changes = {}
+        
+        if current_assignments and teams:
+            for assignment in current_assignments:
+                team = teams.get(assignment.team_id)
+                if team:
+                    col_custom, col_info = st.columns([2, 1])
+                    
+                    with col_custom:
+                        current_custom = assignment.custom_estimated_hours
+                        tier_hours = team.get_hours_per_person_for_tier(assignment.tier)
+                        
+                        new_custom_hours = st.number_input(
+                            f"Horas estimadas para {assignment.team_name}",
+                            min_value=0,
+                            value=current_custom if current_custom is not None else 0,
+                            key=f"custom_hours_{assignment.id}_{project.id}",
+                            help=f"Dejar en 0 para usar tier ({tier_hours}h). Valor específico override el tier."
+                        )
+                        
+                        # Si el valor cambió, guardarlo
+                        new_value = new_custom_hours if new_custom_hours > 0 else None
+                        if new_value != current_custom:
+                            custom_hours_changes[assignment.id] = new_value
+                    
+                    with col_info:
+                        if new_custom_hours > 0:
+                            st.info(f"Usando: {new_custom_hours}h (personalizado)")
+                        else:
+                            st.info(f"Usando: {tier_hours}h (tier {assignment.tier})")
+        
+        if st.button(f"💾 Guardar Cambios", key=f"save_{project.id}"):
+            _save_project_changes(project, new_active, new_hours, new_total_hours, new_start_real, tier_changes, dev_changes, custom_hours_changes)
 
-            # Guardar cambios
-            if st.button("Update Assignment", key=f"save_{row.id}"):
-                run(
-                    project_team_assignments_table.update()
-                    .where(project_team_assignments_table.c.id == row.id)
-                    .values(
-                        tier=int(new_tier),
-                        devs_assigned=new_assigned,
-                        max_devs=new_max,
-                        estimated_hours=new_hours,
-                        ready_to_start_date=new_ready
-                    )
-                )
-                st.success(f"Assignment for {row.team_name} updated.")
-                #st.experimental_rerun()
+
+def _render_project_activation_control(project):
+    """Renderiza control de activación de proyecto"""
+    new_active = st.checkbox(
+        "Activo",
+        value=project.is_active(),
+        key=f"active_{project.id}"
+    )
+    
+    if new_active != project.is_active():
+        project.active = new_active
+        if new_active and project.fecha_inicio_real is None:
+            project.fecha_inicio_real = date.today()
+        
+        try:
+            update_project(project)
+            st.success(f"Proyecto {project.name} actualizado")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error actualizando proyecto: {e}")
+
+
+
+
+
+
+
+
+def _render_project_creation_form(projects):
+    """Renderiza formulario de creación de proyectos"""
+    st.subheader("➕ Crear Nuevo Proyecto")
+    
+    with st.form("create_project"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            pname = st.text_input("📝 Nombre del Proyecto")
+            start = st.date_input("📅 Fecha de Inicio")
+            initial_total_hours = st.number_input(
+                "⏱️ Horas Totales Estimadas", 
+                min_value=0, 
+                value=0,
+                help="Estimación total de horas para completar el proyecto"
+            )
+            
+            # Configuración de Tiers y Devs por Etapa
+            st.markdown("**🎯 Configuración de Tiers y Devs por Etapa**")
+            teams = read_all_teams()
+            tier_config = {}
+            dev_config = {}
+            if teams:
+                for team_id, team in teams.items():
+                    col_tier, col_devs = st.columns(2)
+                    
+                    with col_tier:
+                        available_tiers = list(team.tier_capacities.keys()) if team.tier_capacities else [1]
+                        if available_tiers:
+                            selected_tier = st.selectbox(
+                                f"Tier para {team.name}",
+                                available_tiers,
+                                key=f"tier_{team.name}_create"
+                            )
+                            tier_config[team_id] = selected_tier
+                    
+                    with col_devs:
+                        max_available = team.get_available_devs()
+                        selected_devs = st.number_input(
+                            f"Devs para {team.name}",
+                            min_value=0.0,
+                            max_value=float(max_available),
+                            value=1.0,
+                            step=0.5,
+                            key=f"devs_{team.name}_create",
+                            help=f"Máximo disponible: {max_available}"
+                        )
+                        dev_config[team_id] = selected_devs
+        
+        with col2:
+            due_with_qa = st.date_input("📅 Fecha Límite (con QA)")
+            initial_active = st.checkbox("🟢 Crear como proyecto activo", value=True)
+        
+        submitted = st.form_submit_button("🚀 Crear Proyecto", type="primary")
+        
+        if submitted and pname:
+            _create_new_project(pname, start, due_with_qa, 
+                              initial_total_hours, initial_active, projects, tier_config, dev_config)
+
+
+def _render_project_deletion_section(projects):
+    """Renderiza sección de eliminación de proyectos"""
+    st.subheader("🗑️ Eliminar Proyecto")
+    
+    if not projects:
+        st.info("No hay proyectos disponibles para eliminar.")
+        return
+    
+    project_names = [p.name for p in projects.values()]
+    selected_project_to_delete = st.selectbox(
+        "Seleccionar proyecto a eliminar",
+        [""] + project_names,
+        key="delete_project_select"
+    )
+    
+    if selected_project_to_delete:
+        st.warning(f"⚠️ Esto eliminará permanentemente '{selected_project_to_delete}' y todas sus asignaciones!")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🗑️ Confirmar Eliminación", type="primary"):
+                _delete_project_by_name(selected_project_to_delete)
+        
+        with col2:
+            if st.button("Cancelar"):
+                st.rerun()
+
+
+def _calculate_temp_progress(project, new_hours, new_total_hours):
+    """Calcula progreso temporal para preview"""
+    if new_total_hours <= 0:
+        return {"display": "Sin estimación", "remaining": 0}
+    
+    faltantes = max(0, new_total_hours - new_hours)
+    porcentaje = (new_hours / new_total_hours) * 100
+    
+    return {
+        "display": f"{porcentaje:.1f}% ({new_hours}/{new_total_hours}h)",
+        "remaining": faltantes
+    }
+
+
+def _save_project_changes(project, new_active, new_hours, new_total_hours, new_start_real, tier_changes=None, dev_changes=None, custom_hours_changes=None):
+    """Guarda cambios en proyecto y actualiza tiers y devs de asignaciones"""
+    from modules.common.assignments_crud import read_assignment, update_assignment
+    
+    try:
+        # Actualizar proyecto
+        project.active = new_active
+        project.fecha_inicio_real = new_start_real
+        # Nota: horas_trabajadas y horas_totales_estimadas ahora se calculan dinámicamente
+        
+        if new_active and project.fecha_inicio_real is None:
+            project.fecha_inicio_real = date.today()
+        
+        update_project(project)
+        
+        # Actualizar tiers de asignaciones si hay cambios
+        if tier_changes:
+            teams = read_all_teams()
+            for assignment_id, new_tier in tier_changes.items():
+                assignment = read_assignment(assignment_id)
+                if assignment:
+                    assignment.tier = new_tier
+                    # Actualizar horas estimadas basado en el nuevo tier
+                    team = teams.get(assignment.team_id)
+                    if team:
+                        assignment.estimated_hours = team.get_hours_per_person_for_tier(new_tier)
+                    update_assignment(assignment)
+        
+        # Actualizar devs asignados si hay cambios
+        if dev_changes:
+            for assignment_id, new_devs in dev_changes.items():
+                assignment = read_assignment(assignment_id)
+                if assignment:
+                    assignment.devs_assigned = new_devs
+                    update_assignment(assignment)
+        
+        # Actualizar horas estimadas personalizadas si hay cambios
+        if custom_hours_changes:
+            for assignment_id, new_custom_hours in custom_hours_changes.items():
+                assignment = read_assignment(assignment_id)
+                if assignment:
+                    assignment.custom_estimated_hours = new_custom_hours
+                    update_assignment(assignment)
+        
+        st.success(f"✅ Proyecto '{project.name}' actualizado")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Error guardando cambios: {e}")
+
+
+def _create_new_project(pname, start, due_with_qa, 
+                       initial_total_hours, initial_active, projects, tier_config=None, dev_config=None):
+    """Crea nuevo proyecto con validaciones"""
+    try:
+        if due_with_qa < start:
+            st.error("❌ La fecha límite con QA debe ser posterior a la fecha de inicio")
+            return
+        
+        next_priority = max([p.priority for p in projects.values()], default=0) + 1
+        
+        new_project = Project(
+            id=0,
+            name=pname,
+            priority=next_priority,
+            start_date=start,
+            due_date_wo_qa=start,  # Usar start_date como valor por defecto
+            due_date_with_qa=due_with_qa,
+            active=initial_active,
+            fecha_inicio_real=date.today() if initial_active else None
+        )
+        
+        proj_id = create_project(new_project)
+        _create_default_assignments(proj_id, pname, next_priority, start, tier_config, dev_config)
+        
+        st.success(f"✅ Proyecto '{pname}' creado exitosamente")
+        st.rerun()
+        
+    except Exception as e:
+        st.error(f"Error creando proyecto: {e}")
+
+
+def _create_default_assignments(proj_id, pname, priority, start, tier_config=None, dev_config=None):
+    """Crea asignaciones por defecto para todos los equipos con tiers y devs configurados"""
+    try:
+        teams = read_all_teams()
+        for team_id, team in teams.items():
+            # Usar tier configurado o el máximo disponible como fallback
+            if tier_config and team_id in tier_config:
+                selected_tier = tier_config[team_id]
+            else:
+                selected_tier = max(team.tier_capacities.keys()) if team.tier_capacities else 1
+            
+            # Usar devs configurados o 1.0 como fallback
+            if dev_config and team_id in dev_config:
+                selected_devs = dev_config[team_id]
+            else:
+                selected_devs = 1.0
+            
+            # Calcular horas estimadas basado en el tier
+            estimated_hours = team.get_hours_per_person_for_tier(selected_tier)
+            
+            assignment = Assignment(
+                id=0,
+                project_id=proj_id,
+                project_name=pname,
+                project_priority=priority,
+                team_id=team_id,
+                team_name=team.name,
+                tier=selected_tier,
+                devs_assigned=selected_devs,
+                max_devs=float(team.total_devs),
+                estimated_hours=estimated_hours,
+                ready_to_start_date=start,
+                assignment_start_date=start,
+                status="Not Started",
+                pending_hours=0,
+                custom_estimated_hours=None
+            )
+            create_assignment(assignment)
+    except Exception as e:
+        st.error(f"Error creando asignaciones por defecto: {e}")
+
+
+def _delete_project_by_name(project_name):
+    """Elimina proyecto por nombre"""
+    try:
+        if delete_project_by_name(project_name):
+            st.success(f"Proyecto '{project_name}' eliminado.")
+            st.rerun()
+        else:
+            st.error(f"Proyecto '{project_name}' no encontrado.")
+    except Exception as e:
+        st.error(f"Error eliminando proyecto: {e}")
