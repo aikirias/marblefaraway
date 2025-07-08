@@ -13,6 +13,7 @@ from pandas.tseries.offsets import BusinessDay
 
 from ..common.models import Assignment, Team, Project, ScheduleResult, SimulationInput
 from ..common.date_utils import validate_date_range
+from ..common.constants import PHASE_ORDER_MAP
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class ProjectScheduler:
     """Simulador de cronogramas de proyectos APE con lógica de negocio correcta y determinista."""
 
     def __init__(self):
-        self.team_processing_order = {"Arch": 1, "Devs": 2, "Model": 3, "Dqa": 4}
+        self.team_processing_order = PHASE_ORDER_MAP
 
     def simulate(self, simulation_input: SimulationInput, completed_phases: Dict[int, date] = None) -> ScheduleResult:
         if not simulation_input.teams:

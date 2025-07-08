@@ -9,8 +9,8 @@ MIN_DATE = date(1900, 1, 1)
 MAX_DATE = date(2100, 12, 31)
 
 # Orden de fases APE
-PHASE_ORDER = ["Arch", "Model", "Dev", "Dqa"]
-PHASE_ORDER_MAP = {"Arch": 1, "Model": 2, "Dev": 3, "Dqa": 4}
+PHASE_ORDER = ["Arch", "Model", "Devs", "Dqa"]
+PHASE_ORDER_MAP = {"Arch": 1, "Model": 2, "Devs": 3, "Dqa": 4}
 
 # Colores para Gantt
 PHASE_COLORS = {
