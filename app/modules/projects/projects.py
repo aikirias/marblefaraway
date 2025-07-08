@@ -6,8 +6,6 @@ Combina funcionalidad de projects.py y projects_simple.py eliminando duplicació
 import streamlit as st
 from datetime import date
 # Importar utilidades comunes
-from ..common.ui_utils import DRAGGABLE_AVAILABLE, setup_draggable_list
-from ..common.priority_utils import get_effective_priority, sort_by_effective_priority
 from modules.common.models import Project, Assignment
 from modules.common.projects_crud import (
     create_project, read_all_projects, update_project, delete_project_by_name
@@ -17,57 +15,14 @@ from modules.common.teams_crud import read_all_teams
 
 
 def render_projects():
-    """Renderiza la gestión de proyectos con tabs organizados"""
+    """Renderiza la gestión de proyectos sin subtabs"""
     st.header("Project Management")
     
-    tab1, tab2, tab3 = st.tabs(["📊 Monitoring", "➕ Gestión", "🔄 Reordenar"])
-    
-    with tab1:
-        render_projects_dashboard()
-    
-    with tab2:
-        render_project_management()
-    
-    with tab3:
-        render_project_reordering()
+    # Mostrar directamente la funcionalidad de gestión sin subtabs
+    render_project_management()
 
 
-def render_projects_dashboard():
-    """Monitoring con vista de proyectos y métricas"""
-    st.subheader("📊 Monitoring de Proyectos")
-    
-    try:
-        projects = _load_projects_safely()
-        if not projects:
-            st.info("No hay proyectos creados. Ve a la pestaña 'Gestión' para crear uno.")
-            return
-        
-        # Métricas de proyectos
-        _render_project_metrics(projects)
-        
-        # Sección de proyectos detallados
-        st.markdown("---")
-        st.markdown("### 📋 Detalle de Proyectos")
-        _render_filtered_projects(projects, "dashboard_filter")
-        
-        # Sección de reordenamiento por drag and drop
-        st.markdown("---")
-        st.markdown("### 🔄 Reordenar Prioridades")
-        
-        # Mostrar lista simple de proyectos ordenados por prioridad efectiva
-        all_projects = list(projects.values())
-        sorted_projects = sort_by_effective_priority(all_projects)
-        
-        st.write("📋 Orden actual de proyectos:")
-        for i, p in enumerate(sorted_projects, 1):
-            state_symbol = "🟢" if p.is_active() else "⏸️"
-            state_text = "Activo" if p.is_active() else "Pausado"
-            st.write(f"  {i}. ({p.priority}) {p.name} - {state_symbol} {state_text}")
-        
-    except Exception as e:
-        st.error(f"Error general en dashboard: {e}")
-        import traceback
-        st.code(traceback.format_exc())
+
 
 
 def render_project_management():
@@ -85,27 +40,7 @@ def render_project_management():
     _render_project_deletion_section(projects)
 
 
-def render_project_reordering():
-    """Reordenamiento de proyectos por prioridad con controles de estado"""
-    st.subheader("🔄 Reordenar Proyectos")
-    
-    projects = _load_projects_safely()
-    if not projects:
-        st.info("No hay proyectos para reordenar.")
-        return
-    
-    sorted_projects = sorted(projects.values(), key=lambda p: p.priority)
-    
-    # Controles de estado
-    st.markdown("### Estados de Proyectos")
-    _render_project_state_controls(sorted_projects)
-    
-    st.markdown("---")
-    st.markdown("### Reordenar por Prioridad")
-    
-    # Recargar para datos actualizados
-    projects = _load_projects_safely()
-    _render_priority_reordering(projects)
+
 
 
 # ============================================================================
@@ -121,23 +56,7 @@ def _load_projects_safely():
         return {}
 
 
-def _render_project_metrics(projects):
-    """Renderiza métricas de proyectos"""
-    active_count = sum(1 for p in projects.values() if p.is_active())
-    inactive_count = len(projects) - active_count
-    total_hours_worked = sum(p.get_horas_trabajadas() for p in projects.values())
-    total_hours_estimated = sum(p.get_horas_totales_estimadas() for p in projects.values())
-    total_hours_remaining = sum(p.get_horas_faltantes() for p in projects.values())
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Proyectos Activos", active_count)
-    with col2:
-        st.metric("Proyectos Inactivos", inactive_count)
-    with col3:
-        st.metric("Horas Trabajadas", total_hours_worked)
-    with col4:
-        st.metric("Horas Faltantes", total_hours_remaining)
+
 
 
 def _render_filtered_projects(projects, filter_key, editable=False):
@@ -381,71 +300,10 @@ def _render_project_activation_control(project):
             st.error(f"Error actualizando proyecto: {e}")
 
 
-def _render_project_state_controls(sorted_projects):
-    """Renderiza controles de estado para reordenamiento"""
-    for i, project in enumerate(sorted_projects):
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            st.write(f"**({project.priority}) {project.name}**")
-        
-        with col2:
-            new_active = st.checkbox(
-                "Activo" if project.is_active() else "Inactivo",
-                value=project.is_active(),
-                key=f"reorder_active_{project.id}_{i}"
-            )
-            
-            if new_active != project.is_active():
-                project.active = new_active
-                if new_active and project.fecha_inicio_real is None:
-                    project.fecha_inicio_real = date.today()
-                
-                try:
-                    update_project(project)
-                    st.success(f"Estado de '{project.name}' actualizado")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error actualizando estado: {e}")
 
 
-def _render_priority_reordering(projects):
-    """Renderiza interfaz de reordenamiento por prioridad"""
-    sorted_projects = sorted(projects.values(), key=lambda p: p.priority)
-    
-    if not DRAGGABLE_AVAILABLE:
-        st.info("🔄 Funcionalidad de drag-and-drop no disponible. Mostrando orden actual:")
-        for p in sorted_projects:
-            state_symbol = "☑️" if p.is_active() else "☐"
-            state_text = "Activo" if p.is_active() else "Inactivo"
-            st.write(f"({p.priority}) {p.name} - {state_symbol} {state_text}")
-        return
-    
-    items = []
-    for p in sorted_projects:
-        state_symbol = "☑️" if p.is_active() else "☐"
-        state_text = "Activo" if p.is_active() else "Inactivo"
-        items.append({
-            "id": p.id, 
-            "name": f"({p.priority}) {p.name} - {state_symbol} {state_text}"
-        })
-    
-    new_order = setup_draggable_list(items, text_key="name", key="proj_sort")
-    
-    # Manejar caso donde setup_draggable_list devuelve None
-    if new_order is None:
-        new_order = items
-    
-    if st.button("💾 Guardar Nuevo Orden"):
-        try:
-            for idx, item in enumerate(new_order, start=1):
-                project = projects[item["id"]]
-                project.priority = idx
-                update_project(project)
-            st.success("✅ Prioridades de proyectos actualizadas.")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error actualizando prioridades: {e}")
+
+
 
 
 def _render_project_creation_form(projects):

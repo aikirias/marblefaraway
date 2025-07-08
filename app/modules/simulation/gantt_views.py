@@ -7,6 +7,7 @@ import pandas as pd
 from datetime import date
 from typing import List, Dict, Optional
 from ..common.models import Assignment, ScheduleResult, SimulationInput
+from ..common.constants import PHASE_ORDER_MAP
 
 
 # Esquema de colores para las fases (Vista Consolidada)
@@ -31,13 +32,12 @@ def get_phase_order(team_name: str) -> int:
     Returns:
         int: Orden numérico de la fase
     """
-    phase_order = {"Arch": 1, "Devs": 2, "Model": 3, "Dqa": 4}
-    return phase_order.get(team_name, 999)
+    return PHASE_ORDER_MAP.get(team_name, 999)
 
 
 def validate_phase_sequence(project_assignments: List[Assignment]) -> bool:
     """
-    Valida que las fases sigan el orden correcto: Arch → Devs → Model → Dqa
+    Valida que las fases sigan el orden correcto: Arch → Model → Devs → Dqa
     
     Args:
         project_assignments: Lista de asignaciones de un proyecto

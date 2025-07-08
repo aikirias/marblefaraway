@@ -345,6 +345,7 @@ def _render_simulation_results(priority_overrides):
     _render_metrics(simulation_input, result, priority_overrides)
     _render_gantt_chart(result, simulation_input)
     _render_detailed_results(result, simulation_input)
+    _render_save_plan_section(result, simulation_input)
 
 
 def _render_metrics(simulation_input, result, priority_overrides):
@@ -388,8 +389,6 @@ def _render_gantt_chart(result, simulation_input):
         
         if not gantt_df.empty:
             # DEBUG: Mostrar la tabla de datos del Gantt
-            with st.expander("Ver datos de la simulación (Debug)"):
-                st.dataframe(gantt_df)
 
             project_colors = get_project_colors_map(simulation_input.projects)
             # Usar fecha actual para el Gantt
@@ -398,6 +397,8 @@ def _render_gantt_chart(result, simulation_input):
             if fig:
                 st.plotly_chart(fig, use_container_width=True)
                 _render_gantt_metrics(gantt_df, view_type)
+                with st.expander("Ver datos de la simulación"):
+                    st.dataframe(gantt_df)
             else:
                 st.warning("⚠️ No se pudo generar el gráfico Gantt")
         else:
