@@ -10,24 +10,25 @@ from typing import Dict, Optional
 from .gantt_views import PHASE_COLORS, PROJECT_COLORS
 
 
-def configure_detailed_gantt(fig, gantt_df: pd.DataFrame, project_colors: Dict[str, str]) -> None:
+
+
+def _configure_detailed_gantt_layout(fig, gantt_df: pd.DataFrame) -> None:
     """
-    Configura el gráfico Gantt para vista detallada
+    Configura el layout del gráfico Gantt para vista detallada
     
     Args:
         fig: Figura de Plotly
         gantt_df: DataFrame con datos del Gantt
-        project_colors: Mapa de colores por proyecto
     """
     # Configuración básica
     fig.update_yaxes(
         autorange="reversed", 
-        title="Proyectos y Fases",
+        title="Projects and Phases",
         tickfont=dict(size=10)
     )
     
     fig.update_xaxes(
-        title="Cronograma", 
+        title="Timeline", 
         showgrid=True,
         gridcolor="lightgray",
         gridwidth=1
@@ -36,7 +37,7 @@ def configure_detailed_gantt(fig, gantt_df: pd.DataFrame, project_colors: Dict[s
     # Layout general
     fig.update_layout(
         title={
-            'text': "🔍 Vista Detallada - Cronograma por Proyecto-Fase",
+            'text': "🔍 Detailed View - Timeline by Project-Phase",
             'x': 0.5,
             'xanchor': 'center',
             'font': {'size': 16, 'color': '#2E86AB'}
@@ -54,19 +55,6 @@ def configure_detailed_gantt(fig, gantt_df: pd.DataFrame, project_colors: Dict[s
         plot_bgcolor='white',
         paper_bgcolor='white',
         height=max(500, len(gantt_df) * 35)
-    )
-    
-    # Hover personalizado para vista detallada
-    fig.update_traces(
-        hovertemplate="<b>%{y}</b><br>" +
-                     "Inicio: %{x}<br>" +
-                     "Fin: %{customdata[0]}<br>" +
-                     "Equipo: %{customdata[1]}<br>" +
-                     "Prioridad: %{customdata[2]}<br>" +
-                     "Tier: %{customdata[3]}<br>" +
-                     "Devs: %{customdata[4]}<br>" +
-                     "Horas: %{customdata[5]}<br>" +
-                     "<extra></extra>"
     )
 
 
@@ -96,7 +84,7 @@ def configure_consolidated_gantt(fig, gantt_df: pd.DataFrame, phase_colors: Dict
     # Layout general
     fig.update_layout(
         title={
-            'text': "📈 Vista Consolidada - Timeline por Proyecto",
+            'text': "📈 Consolidated View - Timeline by Project",
             'x': 0.5,
             'xanchor': 'center',
             'font': {'size': 16, 'color': '#2E86AB'}
@@ -109,7 +97,7 @@ def configure_consolidated_gantt(fig, gantt_df: pd.DataFrame, phase_colors: Dict
             xanchor="right", 
             x=1,
             font=dict(size=10),
-            title="Fases del Proyecto"
+            title="Project Phases"
         ),
         margin=dict(l=200, r=50, t=100, b=50),
         plot_bgcolor='white',
@@ -148,14 +136,21 @@ def create_detailed_gantt(gantt_df: pd.DataFrame, project_colors: Dict[str, str]
     fig = px.timeline(
         gantt_df,
         x_start="Start",
-        x_end="Finish", 
+        x_end="Finish",
         y="Task",
         color="Project",
         hover_data=["Team", "Priority", "Tier", "Devs", "Hours"],
         color_discrete_map=project_colors
     )
-    
-    configure_detailed_gantt(fig, gantt_df, project_colors)
+
+    # Use custom hover text
+    fig.update_traces(
+        hovertemplate='%{customdata}<extra></extra>',
+        customdata=gantt_df['HoverText']
+    )
+
+    # Apply layout configuration
+    _configure_detailed_gantt_layout(fig, gantt_df)
     return fig
 
 
@@ -180,35 +175,48 @@ def create_consolidated_gantt(gantt_df: pd.DataFrame, phase_colors: Dict[str, st
     import pandas as pd
     
     fig = go.Figure()
-    
-    # 🚀 OPTIMIZACIÓN: Limitar número de trazas y usar renderizado más eficiente
-    total_traces = 0
-    max_traces_per_project = 10  # Límite para evitar sobrecarga
-    
+
+    max_traces_per_project = 10  # Limit phases per project to avoid rendering issues
+
     for idx, row in gantt_df.iterrows():
         project_name = row['Task']
         phases_info = row['PhasesInfo']
-        
-        # 🚀 OPTIMIZACIÓN: Limitar fases si hay demasiadas
+
+        # Limit phases if there are too many
         if len(phases_info) > max_traces_per_project:
             phases_info = phases_info[:max_traces_per_project]
-        
-        # Crear una traza por cada fase usando Scatter
+
+        # Create a scatter trace for each phase
         for phase_info in phases_info:
-            total_traces += 1
             phase_name = phase_info['name']
             phase_color = phase_colors.get(phase_name, '#CCCCCC')
             
-            # Convertir fechas a timestamps
+            # Convert dates to timestamps
+            # For Scatter visualization: end_date represents the last day of work (inclusive)
+            # We add 1 day so the rectangle visually covers the entire end_date day
             start_date = pd.Timestamp(phase_info['start'])
             end_date = pd.Timestamp(phase_info['end'])
-            
-            # 🚀 OPTIMIZACIÓN: Hover text más simple y eficiente
-            hover_text = f"{project_name.replace('📋 ', '')} - {phase_name}<br>{phase_info['duration']}d, {phase_info['hours']}h"
-            
-            # Crear rectángulo usando Scatter con fill
-            # Definir las 4 esquinas del rectángulo para esta fase
-            x_coords = [start_date, end_date, end_date, start_date, start_date]
+
+            # Visual end: add 1 day so bar extends to end of last day
+            # This ensures no gaps between consecutive phases
+            end_date_visual = end_date + pd.Timedelta(days=1)
+
+            # Display end date + 1 calendar day in hover (cosmetic change)
+            from datetime import timedelta
+            end_date_display = phase_info['end'] + timedelta(days=1)
+
+            # Generate phase-specific hover text (showing end date + 1 calendar day)
+            hover_text = (
+                f"<b>{project_name.replace('📋 ', '')} - {phase_name}</b><br>"
+                f"Start: {phase_info['start'].strftime('%d/%m/%Y')}<br>"
+                f"End: {end_date_display.strftime('%d/%m/%Y')}<br>"
+                f"Hours: {phase_info['hours']}h<br>"
+                f"Devs: {phase_info['devs']}<br>"
+                f"Tier: {phase_info['tier']}"
+            )
+            # Create rectangle using Scatter with fill
+            # Define the 4 corners of the rectangle for this phase
+            x_coords = [start_date, end_date_visual, end_date_visual, start_date, start_date]
             y_coords = [idx - 0.4, idx - 0.4, idx + 0.4, idx + 0.4, idx - 0.4]
             
             # Agregar traza de Scatter para esta fase
@@ -231,13 +239,13 @@ def create_consolidated_gantt(gantt_df: pd.DataFrame, phase_colors: Dict[str, st
     # Configurar el layout
     fig.update_layout(
         title={
-            'text': "📈 Vista Consolidada - Timeline por Proyecto",
+            'text': "📈 Consolidated View - Timeline by Project",
             'x': 0.5,
             'xanchor': 'center',
             'font': {'size': 16, 'color': '#2E86AB'}
         },
-        xaxis_title="Timeline del Proyecto",
-        yaxis_title="Proyectos",
+        xaxis_title="Project Timeline",
+        yaxis_title="Projects",
         showlegend=True,
         legend=dict(
             orientation="h", 
@@ -246,7 +254,7 @@ def create_consolidated_gantt(gantt_df: pd.DataFrame, phase_colors: Dict[str, st
             xanchor="right", 
             x=1,
             font=dict(size=10),
-            title="Fases del Proyecto"
+            title="Project Phases"
         ),
         margin=dict(l=200, r=50, t=100, b=50),
         plot_bgcolor='white',

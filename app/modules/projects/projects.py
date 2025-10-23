@@ -152,6 +152,36 @@ def _render_editable_project_card(project):
     from modules.common.assignments_crud import read_assignments_by_project
     
     with st.expander(f"{project.get_state_display()} {project.name} (Prioridad: {project.priority})"):
+        # Add edit name section
+        col_name, col_edit = st.columns([3, 1])
+        with col_name:
+            st.markdown(f"**Project Name:** {project.name}")
+        with col_edit:
+            if st.button("Edit Name", key=f"edit_name_btn_{project.id}"):
+                st.session_state[f"editing_name_{project.id}"] = True
+        
+        # Show edit form if editing
+        if st.session_state.get(f"editing_name_{project.id}", False):
+            with st.form(f"edit_name_form_{project.id}"):
+                new_name = st.text_input("New Project Name", value=project.name)
+                col_save, col_cancel = st.columns(2)
+                with col_save:
+                    if st.form_submit_button("Save"):
+                        if new_name and new_name != project.name:
+                            project.name = new_name
+                            try:
+                                update_project(project)
+                                st.success(f"Project renamed to '{new_name}'")
+                                st.session_state[f"editing_name_{project.id}"] = False
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error updating project name: {e}")
+                with col_cancel:
+                    if st.form_submit_button("Cancel"):
+                        st.session_state[f"editing_name_{project.id}"] = False
+                        st.rerun()
+        
+        st.markdown("---")
         col1, col2 = st.columns(2)
         
         with col1:
